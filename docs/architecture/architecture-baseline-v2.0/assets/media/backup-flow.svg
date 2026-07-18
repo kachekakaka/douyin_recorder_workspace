@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">源码历史与运行数据双轨防丢</title>
+  <desc id="desc">代码通过分支、PR、CI、main 和 tag 保存，并导出 Git Bundle；配置、SQLite 与录像独立备份，二者定期进行恢复演练。</desc>
+  <style>text{font-family:Arial,"Microsoft YaHei",sans-serif;fill:#172033}.title{font-size:30px;font-weight:700}.box{fill:#f7f9fc;stroke:#315f83;stroke-width:3;rx:16}.code{fill:#e8f2f8}.data{fill:#edf7f3;stroke:#2f7566}.verify{fill:#fff6e5;stroke:#9a671b}.label{font-size:22px;font-weight:700}.small{font-size:17px}.arrow{stroke:#315f83;stroke-width:3;fill:none;marker-end:url(#arrow)}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#315f83"/></marker></defs>
+  <text x="600" y="48" text-anchor="middle" class="title">源码历史与运行数据的双轨防丢方案</text>
+  <rect x="80" y="100" width="460" height="85" class="box code"/><text x="310" y="135" text-anchor="middle" class="label">代码轨：开发分支 → PR → CI</text><text x="310" y="163" text-anchor="middle" class="small">每个可验证里程碑 commit + push</text>
+  <rect x="80" y="245" width="460" height="85" class="box code"/><text x="310" y="280" text-anchor="middle" class="label">GitHub main + tag + commit SHA</text><text x="310" y="308" text-anchor="middle" class="small">源码树直接可审查 · 生产只 fast-forward 更新</text>
+  <rect x="80" y="390" width="460" height="100" class="box code"/><text x="310" y="425" text-anchor="middle" class="label">发布与离线代码备份</text><text x="310" y="454" text-anchor="middle" class="small">源码 ZIP · Git Bundle --all · SHA256SUMS</text><text x="310" y="477" text-anchor="middle" class="small">NAS + 云盘至少各一份</text><path d="M310 185 V245" class="arrow"/><path d="M310 330 V390" class="arrow"/>
+  <rect x="660" y="100" width="460" height="85" class="box data"/><text x="890" y="135" text-anchor="middle" class="label">数据轨：config + secrets</text><text x="890" y="163" text-anchor="middle" class="small">加密保存，不进入 GitHub</text>
+  <rect x="660" y="245" width="460" height="85" class="box data"/><text x="890" y="280" text-anchor="middle" class="label">userdata / SQLite</text><text x="890" y="308" text-anchor="middle" class="small">backup API 或一致性停机快照</text>
+  <rect x="660" y="390" width="460" height="100" class="box data"/><text x="890" y="425" text-anchor="middle" class="label">records / 原始媒体</text><text x="890" y="454" text-anchor="middle" class="small">第二块盘或 NAS · 校验/抽样校验</text><text x="890" y="477" text-anchor="middle" class="small">数据库与媒体时间点必须匹配</text><path d="M890 185 V245" class="arrow"/><path d="M890 330 V390" class="arrow"/>
+  <rect x="355" y="555" width="490" height="78" class="box verify"/><text x="600" y="587" text-anchor="middle" class="label">定期恢复演练</text><text x="600" y="615" text-anchor="middle" class="small">从 Git Bundle + 配置/SQLite/媒体备份完整恢复并验证</text><path d="M310 490 L480 555" class="arrow"/><path d="M890 490 L720 555" class="arrow"/>
+</svg>

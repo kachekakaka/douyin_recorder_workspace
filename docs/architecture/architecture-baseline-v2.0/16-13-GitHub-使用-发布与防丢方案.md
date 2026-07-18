@@ -1,6 +1,6 @@
 # 13. GitHub 使用、发布与防丢方案
 
-<img src="assets/media/image4.png" style="width:6.85in;height:3.53917in" />
+<img src="assets/media/backup-flow.svg" style="width:6.85in;height:3.53917in" />
 
 图 2 源码历史与运行数据的双轨防丢方案
 
@@ -157,4 +157,3 @@ git clone douyin-recorder-v0.1.0.bundle restored-repo</th>
 - 不要只备份媒体不备份数据库，或只备份数据库不备份媒体索引；二者时间点必须匹配。
 
 - 不要把 GitHub 当作唯一备份；账号、仓库、Release 资产都可能误删或失去访问。
-

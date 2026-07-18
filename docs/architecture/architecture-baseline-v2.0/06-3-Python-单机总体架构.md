@@ -1,6 +1,6 @@
 # 3. Python 单机总体架构
 
-<img src="assets/media/image3.png" style="width:6.85in;height:3.99583in" />
+<img src="assets/media/system-architecture.svg" style="width:6.85in;height:3.99583in" />
 
 图 1 Python 单机多直播间录播总体架构
 
