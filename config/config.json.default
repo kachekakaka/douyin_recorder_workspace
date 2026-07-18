@@ -1,0 +1,29 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3399,
+    "auth_required": false
+  },
+  "poll": {
+    "interval_seconds": 15,
+    "jitter_seconds": 5,
+    "offline_confirmations": 3,
+    "max_parallel_checks": 10
+  },
+  "recording": {
+    "max_active_recordings": 0,
+    "protocol": "flv",
+    "quality": "origin",
+    "container": "mkv",
+    "segment_seconds": 600,
+    "recipient_cut_offset_ms": 0
+  },
+  "jobs": {
+    "concurrency": 1,
+    "max_attempts": 3
+  },
+  "storage": {
+    "soft_limit_percent": 80,
+    "hard_limit_percent": 92
+  }
+}

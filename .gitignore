@@ -1,0 +1,68 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Actual config and secrets
+.env
+*.local
+config/config.json
+config/runtime.env
+config/secrets.json
+config/*.bak
+bootstrap-token.txt
+**/*cookie*
+**/*sessionid*
+
+# Runtime state
+userdata/*
+!userdata/.gitkeep
+!userdata/README.md
+records/*
+!records/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+*.tmp
+.cache/
+.tmp/
+.runtime/
+quarantine/
+
+# Captures / private fixtures
+captures/
+private-fixtures/
+
+# Build / release / backup outputs
+build/
+dist/
+release/
+backups/
+*.bundle
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.sha256
+SHA256SUMS.txt
+
+# Extracted third-party executables
+vendor/runtime/
+vendor/windows/*.pack
+vendor/windows/*.exe
+vendor/windows/ffmpeg/
