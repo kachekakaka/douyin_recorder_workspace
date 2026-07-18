@@ -1,0 +1,23 @@
+{
+  "contract_version": 1,
+  "target_method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+  "live_verified": false,
+  "status": "provisional-wire-contract",
+  "notes": [
+    "Independently implemented P0 wire contract; not copied from a generated third-party schema.",
+    "Field numbers must be confirmed with a user-authorized live capture before P1.",
+    "The current provisional target payload has no confirmed recipient_user_open_id field."
+  ],
+  "target": {
+    "common_field": 1,
+    "recipient_user_id_field": 2,
+    "recipient_user_id_encoding": "varint",
+    "change_reason_enum_field": 3,
+    "extra_map_field": 4,
+    "recipient_user_open_id_field": null
+  },
+  "common": {
+    "msg_id_field": 2,
+    "create_time_field": 4
+  }
+}

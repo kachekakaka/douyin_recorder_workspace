@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="抖音团播录播工作台 P0">
+  <title>抖音录播工作台 · P0</title>
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <p class="kicker">DOUYIN RECORDER WORKSPACE</p>
+      <h1>抖音录播工作台</h1>
+      <p>当前阶段：P0 仓库骨架与协议验证</p>
+    </div>
+    <button id="refreshButton" type="button">刷新状态</button>
+  </header>
+  <main>
+    <section class="notice">
+      <strong>严格业务口径</strong>
+      <p>当前推荐收礼人只允许由 <code>WebcastGroupLiveGiftRecipientRecommendMessage</code> 更新。当前页面不代表协议已完成现场验证。</p>
+    </section>
+    <section class="grid" aria-live="polite">
+      <article class="card"><span>应用</span><strong id="appState">正在连接…</strong><small id="versionText">-</small></article>
+      <article class="card"><span>SQLite</span><strong id="databaseState">-</strong><small id="databasePath">-</small></article>
+      <article class="card"><span>FFmpeg</span><strong id="ffmpegState">-</strong><small id="ffmpegVersion">-</small></article>
+      <article class="card"><span>ffprobe</span><strong id="ffprobeState">-</strong><small id="ffprobeVersion">-</small></article>
+      <article class="card"><span>推荐收礼人 Contract</span><strong id="protocolState">-</strong><small id="protocolHash">-</small></article>
+    </section>
+    <section class="panel">
+      <h2>P0 范围</h2>
+      <ul>
+        <li>FastAPI、静态网页和 SQLite migration 可执行骨架</li>
+        <li>FFmpeg / ffprobe readiness</li>
+        <li>单房间 WSS method/raw-frame 验证工具与可重复 replay fixture</li>
+        <li>不包含完整录制、自动切片或多平台能力</li>
+      </ul>
+      <p id="protocolNote">现场协议事实尚未验证；当前页面只展示 P0 工程与合成 fixture 状态。</p>
+      <p id="errorText" class="error" hidden></p>
+    </section>
+  </main>
+  <script type="module" src="/assets/js/app.js"></script>
+</body>
+</html>
