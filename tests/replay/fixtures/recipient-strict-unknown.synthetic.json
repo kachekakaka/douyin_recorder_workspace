@@ -1,0 +1,165 @@
+{
+  "fixture_version": 1,
+  "name": "strict-unknown-duplicate-reconnect-late",
+  "synthetic": true,
+  "live_verified": false,
+  "contains_real_user_data": false,
+  "target_method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+  "steps": [
+    {
+      "type": "session_started",
+      "at_ms": 1000,
+      "monotonic_ns": 1000000,
+      "runtime_instance_id": "synthetic-runtime-a"
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1100,
+      "received_monotonic_ns": 1100000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EAsyBGd6aXA6A21zZ0KJAR+LCAAAAAAAAv/jiuLSDU9NSk4sLnEvyi8t8MksS3XPTCsJSk3OLMhMzQMx8nNzU/NSfFOLixPTU4XUuNgEJvop7OAQOHj01Jp9ohJMStxcbLmJRdmpRUKMiVps/gGufrqOEhP9tISLK/NKMlJLMpN1k0uLivOLdA0NHSb4eTACAEDUokF2AAAA"
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1110,
+      "received_monotonic_ns": 1110000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EAwyBGd6aXA6A21zZ0KJAR+LCAAAAAAAAv/jiuLSDU9NSk4sLnEvyi8t8MksS3XPTCsJSk3OLMhMzQMx8nNzU/NSfFOLixPTU4XUuNgEJvop7OAQOHj01Jp9ohJMStxcbLmJRdmpRUKMiVps/gGufrqOEhP9tISLK/NKMlJLMpN1k0uLivOLdA2NHCb4eTACAO6mNsd2AAAA"
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1150,
+      "received_monotonic_ns": 1150000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EA0yBGd6aXA6A21zZ0JRH4sIAAAAAAAC/+NS5BIKT01KTiwucc5ILPFNLS5OTE8VYs9Mz8svSk2RWDiHUUu4uDKvJCO1JDNZN7m0qDi/SNfQ2GGCnwcjAIop/Xs9AAAA"
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1200,
+      "received_monotonic_ns": 1200000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EA4yBGd6aXA6A21zZ0KJAR+LCAAAAAAAAv/jiuLSDU9NSk4sLnEvyi8t8MksS3XPTCsJSk3OLMhMzQMx8nNzU/NSfFOLixPTU4XUuNgEJvkpTOIUOHT01Jp9ohLMStxcbLmJRdmpRUKMSVps/gGufrpOEpP8tISLK/NKMlJLMpN1k0uLivOLdA1NHCb4eTACAFEWMJV2AAAA"
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1300,
+      "received_monotonic_ns": 1300000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EA8yBGd6aXA6A21zZ0J/H4sIAAAAAAAC/+MK5NINT01KTiwucS/KLy3wySxLdc9MKwlKTc4syEzNAzHyc3NT81J8U4uLE9NThWS52AQm+ym84RRgkGBR4udiy00syk4tEmJNzS0oqZSY7KclXFyZV5KRWpKZrJtcWlScX6RraOowwc+DEQCIJ2OfbQAAAA=="
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1400,
+      "received_monotonic_ns": 1400000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EBAyBGd6aXA6A21zZ0KDAR+LCAAAAAAAAv/jCuXSDU9NSk4sLnEvyi8t8MksS3XPTCsJSk3OLMhMzQMx8nNzU/NSfFOLixPTU4UUudgEpvgpHOMSYJBgVeLmYstNLMpOLRJiTNZi8w9w9dN1lpjipyVcXJlXkpFakpmsm1xaVJxfpGto5jDBz4MRACtCydVxAAAA"
+    },
+    {
+      "type": "im_disconnected",
+      "at_ms": 1500,
+      "monotonic_ns": 1500000,
+      "runtime_instance_id": "synthetic-runtime-a"
+    },
+    {
+      "type": "im_reconnected"
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1700,
+      "received_monotonic_ns": 1700000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EBEyBGd6aXA6A21zZ0KJAR+LCAAAAAAAAv/jiuLSDU9NSk4sLnEvyi8t8MksS3XPTCsJSk3OLMhMzQMx8nNzU/NSfFOLixPTU4XUuNgEpvopvOAROHz01Jp9ohJMStxcbLmJRdmpRUKMKVps/gGufrouElP9tISLK/NKMlJLMpN1k0uLivOLdA3NHSb4eTACAEDSUst2AAAA"
+    },
+    {
+      "type": "frame",
+      "received_at_ms": 1650,
+      "received_monotonic_ns": 1710000,
+      "runtime_instance_id": "synthetic-runtime-a",
+      "frame_base64": "EBIyBGd6aXA6A21zZ0KMAR+LCAAAAAAAAv/jiuXSDU9NSk4sLnEvyi8t8MksS3XPTCsJSk3OLMhMzQMx8nNzU/NSfFOLixPTU4U0udgEpvkpHOAROHL01Jp9ohJsSnxcbLmJRdmpRUIsOYklqVps/gGufrquEtP8tISLK/NKMlJLMpN1k0uLivOLdA0tHCb4eTACAIQsMlh5AAAA"
+    },
+    {
+      "type": "session_ended",
+      "at_ms": 1800,
+      "monotonic_ns": 1800000,
+      "runtime_instance_id": "synthetic-runtime-a"
+    }
+  ],
+  "expected": {
+    "target_messages": 7,
+    "decode_failures": 0,
+    "intervals": [
+      {
+        "status": "waiting",
+        "reason": "waiting_first_event",
+        "recipient_key": null,
+        "started_at_ms": 1000,
+        "ended_at_ms": 1100
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "uid:738291000001",
+        "started_at_ms": 1100,
+        "ended_at_ms": 1200
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "uid:738291000002",
+        "started_at_ms": 1200,
+        "ended_at_ms": 1300
+      },
+      {
+        "status": "unknown",
+        "reason": "empty_recipient",
+        "recipient_key": null,
+        "started_at_ms": 1300,
+        "ended_at_ms": 1400
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "openid:OPEN-C",
+        "started_at_ms": 1400,
+        "ended_at_ms": 1500
+      },
+      {
+        "status": "unknown",
+        "reason": "im_disconnected",
+        "recipient_key": null,
+        "started_at_ms": 1500,
+        "ended_at_ms": 1700
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "uid:738291000003",
+        "started_at_ms": 1700,
+        "ended_at_ms": 1800
+      }
+    ],
+    "report": {
+      "event_count": 7,
+      "unique_event_count": 6,
+      "duplicate_frame_count": 1,
+      "late_event_count": 1,
+      "empty_recipient_count": 1,
+      "change_reason_distribution": {
+        "2": 2,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1
+      },
+      "transport_disconnects": 1,
+      "transport_reconnects": 1,
+      "server_delay_ms": {
+        "count": 6,
+        "min": 20,
+        "median": 45.0,
+        "p95": 60,
+        "max": 60
+      }
+    }
+  }
+}

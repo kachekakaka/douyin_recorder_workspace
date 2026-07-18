@@ -1,0 +1,23 @@
+{
+  "contract_version": 1,
+  "target_method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+  "live_verified": false,
+  "status": "synthetic-test-only",
+  "notes": [
+    "This contract exists only to exercise deterministic P0 replay.",
+    "Its field numbers are not a claim about the current Douyin production schema.",
+    "A live contract must be created from user-authorized captures and separately reviewed."
+  ],
+  "target": {
+    "common_field": 1,
+    "recipient_user_id_field": 2,
+    "recipient_user_id_encoding": "varint",
+    "change_reason_enum_field": 3,
+    "extra_map_field": 4,
+    "recipient_user_open_id_field": 5
+  },
+  "common": {
+    "msg_id_field": 2,
+    "create_time_field": 4
+  }
+}
