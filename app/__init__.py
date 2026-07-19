@@ -1,0 +1,3 @@
+"""Douyin recorder workspace application package."""
+
+__version__ = "0.1.0-p0"

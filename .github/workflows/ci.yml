@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/p0-bootstrap]
   pull_request:
   workflow_dispatch:
 
@@ -14,47 +14,156 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  repository-baseline:
+  python:
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
-      - name: Checkout
+      - name: Checkout full history
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
 
       - name: Verify repository baseline
-        run: python tools/verify_repository_baseline.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/verify_repository_baseline.py 2>&1 | tee "$RUNNER_TEMP/verify-baseline.log"
 
-      - name: Compile tracked Python
+      - name: Verify P0 source boundaries
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/verify_source.py 2>&1 | tee "$RUNNER_TEMP/verify-source.log"
+
+      - name: Compile Python
         run: python -m compileall -q app tests tools
 
+      - name: Ruff
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m ruff check --no-cache app tests tools 2>&1 | tee "$RUNNER_TEMP/ruff.log"
+
+      - name: Pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q -p no:cacheprovider --tb=short 2>&1 | tee "$RUNNER_TEMP/pytest.log"
+
+      - name: Verify deterministic replay report
+        run: |
+          python tools/replay_recipient_fixture.py --quiet \
+            --json-output "$RUNNER_TEMP/replay.json" \
+            --markdown-output "$RUNNER_TEMP/replay.md"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          actual_path = Path(os.environ["RUNNER_TEMP"]) / "replay.json"
+          actual = json.loads(actual_path.read_text(encoding="utf-8"))
+          expected = json.loads(
+              Path("docs/protocol/P0_SYNTHETIC_REPLAY_REPORT.json").read_text(encoding="utf-8")
+          )
+          if actual != expected:
+              raise SystemExit("deterministic replay report differs from committed baseline")
+          PY
+
+      - name: Create and restore source recovery assets
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -o pipefail
+          # CI validates the committed HEAD. Test-generated ignored files must not block this check.
+          python tools/create_recovery_assets.py \
+            --output-dir "$RUNNER_TEMP/recovery" \
+            --label "ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --allow-dirty \
+            2>&1 | tee "$RUNNER_TEMP/recovery.log"
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.python-version }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/verify-baseline.log
+            ${{ runner.temp }}/verify-source.log
+            ${{ runner.temp }}/ruff.log
+            ${{ runner.temp }}/pytest.log
+            ${{ runner.temp }}/recovery.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload verified recovery assets
+        if: matrix.python-version == '3.12' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-recovery-assets-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/recovery/*
+          if-no-files-found: error
+          retention-days: 7
+
   frontend-syntax:
+    name: Frontend syntax
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Check JavaScript syntax when present
+      - name: Check JavaScript syntax
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' files < <(find web -type f -name '*.js' -print0)
-          if (( ${#files[@]} == 0 )); then
-            echo "No JavaScript files yet; baseline check complete."
-            exit 0
-          fi
-          for file in "${files[@]}"; do
+          while IFS= read -r -d '' file; do
             node --check "$file"
-          done
+          done < <(find web -type f -name '*.js' -print0)
+
+  windows-verify:
+    name: Windows verify.bat
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+      - name: Run the exact Windows verification entrypoint
+        shell: cmd
+        run: |
+          set "VERIFY_LOG=%RUNNER_TEMP%\verify-windows.log"
+          call verify.bat > "%VERIFY_LOG%" 2>&1
+          set "VERIFY_RC=%ERRORLEVEL%"
+          type "%VERIFY_LOG%"
+          exit /b %VERIFY_RC%
+      - name: Upload Windows verification log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-verify-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verify-windows.log
+          if-no-files-found: ignore
+          retention-days: 7

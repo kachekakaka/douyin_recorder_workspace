@@ -1,0 +1,301 @@
+{
+  "scenario": "strict-unknown-duplicate-reconnect-late",
+  "fixture_synthetic": true,
+  "fixture_live_verified": false,
+  "methods": {
+    "WebcastGroupLiveGiftRecipientRecommendMessage": 7,
+    "WebcastChatMessage": 1
+  },
+  "target_messages": 7,
+  "target_decode_failures": 0,
+  "reducer": {
+    "connected": false,
+    "ended": true,
+    "current": null,
+    "intervals": [
+      {
+        "status": "waiting",
+        "reason": "waiting_first_event",
+        "recipient_key": null,
+        "recipient_user_id": null,
+        "recipient_user_open_id": null,
+        "started_at_ms": 1000,
+        "ended_at_ms": 1100,
+        "started_monotonic_ns": 1000000,
+        "ended_monotonic_ns": 1100000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "ended_runtime_instance_id": "synthetic-runtime-a"
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "uid:738291000001",
+        "recipient_user_id": "738291000001",
+        "recipient_user_open_id": "OPEN-A",
+        "started_at_ms": 1100,
+        "ended_at_ms": 1200,
+        "started_monotonic_ns": 1100000,
+        "ended_monotonic_ns": 1200000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "ended_runtime_instance_id": "synthetic-runtime-a"
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "uid:738291000002",
+        "recipient_user_id": "738291000002",
+        "recipient_user_open_id": "OPEN-B",
+        "started_at_ms": 1200,
+        "ended_at_ms": 1300,
+        "started_monotonic_ns": 1200000,
+        "ended_monotonic_ns": 1300000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "ended_runtime_instance_id": "synthetic-runtime-a"
+      },
+      {
+        "status": "unknown",
+        "reason": "empty_recipient",
+        "recipient_key": null,
+        "recipient_user_id": null,
+        "recipient_user_open_id": null,
+        "started_at_ms": 1300,
+        "ended_at_ms": 1400,
+        "started_monotonic_ns": 1300000,
+        "ended_monotonic_ns": 1400000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "ended_runtime_instance_id": "synthetic-runtime-a"
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "openid:OPEN-C",
+        "recipient_user_id": null,
+        "recipient_user_open_id": "OPEN-C",
+        "started_at_ms": 1400,
+        "ended_at_ms": 1500,
+        "started_monotonic_ns": 1400000,
+        "ended_monotonic_ns": 1500000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "ended_runtime_instance_id": "synthetic-runtime-a"
+      },
+      {
+        "status": "unknown",
+        "reason": "im_disconnected",
+        "recipient_key": null,
+        "recipient_user_id": null,
+        "recipient_user_open_id": null,
+        "started_at_ms": 1500,
+        "ended_at_ms": 1700,
+        "started_monotonic_ns": 1500000,
+        "ended_monotonic_ns": 1700000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "ended_runtime_instance_id": "synthetic-runtime-a"
+      },
+      {
+        "status": "active",
+        "reason": "recipient_event_received",
+        "recipient_key": "uid:738291000003",
+        "recipient_user_id": "738291000003",
+        "recipient_user_open_id": "OPEN-D",
+        "started_at_ms": 1700,
+        "ended_at_ms": 1800,
+        "started_monotonic_ns": 1700000,
+        "ended_monotonic_ns": 1800000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "ended_runtime_instance_id": "synthetic-runtime-a"
+      }
+    ],
+    "events": [
+      {
+        "method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+        "msg_id": "10001",
+        "envelope_msg_id": "10001",
+        "server_event_at_ms": 1080,
+        "server_time_unit": "milliseconds-inferred",
+        "received_at_ms": 1100,
+        "received_monotonic_ns": 1100000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "recipient_user_id": "738291000001",
+        "recipient_user_open_id": "OPEN-A",
+        "recipient_key": "uid:738291000001",
+        "change_reason_enum": 2,
+        "extra": {
+          "marker": "a"
+        },
+        "payload_hash": "dbf38a26a4c74e4df367dd9307e40c1f09ae801a033664fe95a148d28d25cd66",
+        "payload_size": 38,
+        "unknown_fields": [],
+        "dedup_key": "msg:10001",
+        "delay_ms": 20,
+        "duplicate_count": 1,
+        "last_received_at_ms": 1110,
+        "is_late": false
+      },
+      {
+        "method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+        "msg_id": "10002",
+        "envelope_msg_id": "10002",
+        "server_event_at_ms": 1170,
+        "server_time_unit": "milliseconds-inferred",
+        "received_at_ms": 1200,
+        "received_monotonic_ns": 1200000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "recipient_user_id": "738291000002",
+        "recipient_user_open_id": "OPEN-B",
+        "recipient_key": "uid:738291000002",
+        "change_reason_enum": 3,
+        "extra": {
+          "marker": "b"
+        },
+        "payload_hash": "67710e4464cd55eab4ec40f7eb36550d375656997d6db1c011c914c4abe8ca18",
+        "payload_size": 38,
+        "unknown_fields": [],
+        "dedup_key": "msg:10002",
+        "delay_ms": 30,
+        "duplicate_count": 0,
+        "last_received_at_ms": 1200,
+        "is_late": false
+      },
+      {
+        "method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+        "msg_id": "10003",
+        "envelope_msg_id": "10003",
+        "server_event_at_ms": 1260,
+        "server_time_unit": "milliseconds-inferred",
+        "received_at_ms": 1300,
+        "received_monotonic_ns": 1300000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "recipient_user_id": null,
+        "recipient_user_open_id": null,
+        "recipient_key": null,
+        "change_reason_enum": 4,
+        "extra": {
+          "marker": "empty"
+        },
+        "payload_hash": "86065f21c944162d7bbe7d1c3156b1da7e28e1a0c6bc8eb3e54eee397afd3f14",
+        "payload_size": 29,
+        "unknown_fields": [],
+        "dedup_key": "msg:10003",
+        "delay_ms": 40,
+        "duplicate_count": 0,
+        "last_received_at_ms": 1300,
+        "is_late": false
+      },
+      {
+        "method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+        "msg_id": "10004",
+        "envelope_msg_id": "10004",
+        "server_event_at_ms": 1350,
+        "server_time_unit": "milliseconds-inferred",
+        "received_at_ms": 1400,
+        "received_monotonic_ns": 1400000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "recipient_user_id": null,
+        "recipient_user_open_id": "OPEN-C",
+        "recipient_key": "openid:OPEN-C",
+        "change_reason_enum": 5,
+        "extra": {
+          "marker": "c"
+        },
+        "payload_hash": "0435facf3530e140f0b8687d0fbba78f11341143913f1b01f20db7fec78302a9",
+        "payload_size": 33,
+        "unknown_fields": [],
+        "dedup_key": "msg:10004",
+        "delay_ms": 50,
+        "duplicate_count": 0,
+        "last_received_at_ms": 1400,
+        "is_late": false
+      },
+      {
+        "method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+        "msg_id": "10005",
+        "envelope_msg_id": "10005",
+        "server_event_at_ms": 1640,
+        "server_time_unit": "milliseconds-inferred",
+        "received_at_ms": 1700,
+        "received_monotonic_ns": 1700000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "recipient_user_id": "738291000003",
+        "recipient_user_open_id": "OPEN-D",
+        "recipient_key": "uid:738291000003",
+        "change_reason_enum": 2,
+        "extra": {
+          "marker": "d"
+        },
+        "payload_hash": "b351ee4885688de2bc2f7a0fa23b62b95222af37cf9f9168bc13372ca1f94180",
+        "payload_size": 38,
+        "unknown_fields": [],
+        "dedup_key": "msg:10005",
+        "delay_ms": 60,
+        "duplicate_count": 0,
+        "last_received_at_ms": 1700,
+        "is_late": false
+      },
+      {
+        "method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+        "msg_id": "10006",
+        "envelope_msg_id": "10006",
+        "server_event_at_ms": 1600,
+        "server_time_unit": "milliseconds-inferred",
+        "received_at_ms": 1650,
+        "received_monotonic_ns": 1710000,
+        "runtime_instance_id": "synthetic-runtime-a",
+        "recipient_user_id": "738291000004",
+        "recipient_user_open_id": "OPEN-E",
+        "recipient_key": "uid:738291000004",
+        "change_reason_enum": 6,
+        "extra": {
+          "marker": "late"
+        },
+        "payload_hash": "6c0fed3528ef6ae24dc944910cd1cde3b3f63a69e534fb12ad78c55efdccc592",
+        "payload_size": 41,
+        "unknown_fields": [],
+        "dedup_key": "msg:10006",
+        "delay_ms": 50,
+        "duplicate_count": 0,
+        "last_received_at_ms": 1650,
+        "is_late": true
+      }
+    ]
+  },
+  "report": {
+    "event_count": 7,
+    "empty_recipient_count": 1,
+    "recipient_user_ids": [
+      "738291000001",
+      "738291000002",
+      "738291000003",
+      "738291000004"
+    ],
+    "recipient_user_open_ids": [
+      "OPEN-A",
+      "OPEN-B",
+      "OPEN-C",
+      "OPEN-D",
+      "OPEN-E"
+    ],
+    "change_reason_distribution": {
+      "2": 2,
+      "3": 1,
+      "4": 1,
+      "5": 1,
+      "6": 1
+    },
+    "server_time_unit_distribution": {
+      "milliseconds-inferred": 6
+    },
+    "unknown_target_field_numbers": [],
+    "server_delay_ms": {
+      "count": 6,
+      "min": 20,
+      "median": 45.0,
+      "p95": 60,
+      "max": 60
+    },
+    "unique_event_count": 6,
+    "duplicate_frame_count": 1,
+    "late_event_count": 1,
+    "transport_disconnects": 1,
+    "transport_reconnects": 1
+  }
+}
