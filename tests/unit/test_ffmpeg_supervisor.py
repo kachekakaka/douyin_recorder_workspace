@@ -78,6 +78,8 @@ def stop(*_args):
     running = False
 if hasattr(signal, 'SIGINT'):
     signal.signal(signal.SIGINT, stop)
+if hasattr(signal, 'SIGBREAK'):
+    signal.signal(signal.SIGBREAK, stop)
 print('frame=1', flush=True)
 print('out_time_us=1000', flush=True)
 print('progress=continue', flush=True)
