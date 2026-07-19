@@ -3,10 +3,10 @@ name: P0 Douyin live preflight
 on:
   workflow_dispatch:
     inputs:
-      room_id:
-        description: Authorized Douyin ID or live room path identifier
+      room_ids_json:
+        description: JSON array of authorized Douyin IDs or live room path identifiers
         required: true
-        default: "73504089679"
+        default: '["79907888978","94771623313","40727638291"]'
       duration_seconds:
         description: Headless browser observation window
         required: true
@@ -33,10 +33,15 @@ concurrency:
 
 jobs:
   preflight:
+    name: Preflight ${{ matrix.room_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        room_id: ${{ fromJSON(inputs.room_ids_json || '["79907888978","94771623313","40727638291"]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      ROOM_ID: ${{ inputs.room_id || '73504089679' }}
+      ROOM_ID: ${{ matrix.room_id }}
       DURATION_SECONDS: ${{ inputs.duration_seconds || '60' }}
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +63,6 @@ jobs:
             --output "$RUNNER_TEMP/http-preflight.json"
 
       - name: Browser/CDP WSS observation
-        continue-on-error: true
         run: |
           python tools/douyin_browser_probe.py \
             --room-id "$ROOM_ID" \
