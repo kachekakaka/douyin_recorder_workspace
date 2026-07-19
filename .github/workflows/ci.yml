@@ -90,9 +90,11 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # CI validates the committed HEAD. Test-generated ignored files must not block this check.
           python tools/create_recovery_assets.py \
             --output-dir "$RUNNER_TEMP/recovery" \
             --label "ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --allow-dirty \
             2>&1 | tee "$RUNNER_TEMP/recovery.log"
 
       - name: Upload failure diagnostics
