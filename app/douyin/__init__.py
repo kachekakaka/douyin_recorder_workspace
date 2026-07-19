@@ -1,8 +1,7 @@
-"""P0-only Douyin protocol validation helpers.
+"""Douyin-only protocol, live-page, and recording helpers.
 
-This package contains a minimal, independently implemented transport envelope parser,
-a privacy-safe WebSocket probe, and an offline replay reducer. It doesn't claim that
-the target room has been live-verified.
+The target recipient contract remains provisional until a user-authorized live capture
+confirms the production fields and reconnect behavior.
 """
 
 TARGET_METHOD = "WebcastGroupLiveGiftRecipientRecommendMessage"

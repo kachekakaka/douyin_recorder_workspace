@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+import pytest
+
+from app.db import Database
+from app.rooms import RoomAlreadyExistsError, RoomCreate, RoomPatch, RoomRepository
+
+
+def test_room_repository_crud_and_check_audit(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        database = Database(tmp_path / "userdata" / "douyin_recorder.db")
+        await database.initialize()
+        repository = RoomRepository(database)
+        room = await repository.create_room(
+            RoomCreate(room_key="group-a", room_url="73504089679")
+        )
+        assert room.room_url == "https://live.douyin.com/73504089679"
+        assert room.enabled is True
+
+        with pytest.raises(RoomAlreadyExistsError):
+            await repository.create_room(
+                RoomCreate(room_key="group-a", room_url="73504089679")
+            )
+
+        updated = await repository.update_room(
+            "group-a",
+            RoomPatch(quality="hd", protocol="hls", poll_interval_seconds=30),
+        )
+        assert updated.quality == "hd"
+        assert updated.protocol == "hls"
+        assert updated.poll_interval_seconds == 30
+
+        check = {
+            "checked_at_ms": 1234,
+            "live_state": "live",
+            "http_status": 200,
+            "final_host": "live.douyin.com",
+            "final_path": "/73504089679",
+            "external_room_id": "998877665544332211",
+            "web_rid": "73504089679",
+            "title": "Fixture",
+            "stream_candidate_count": 2,
+            "stream_candidates": [],
+        }
+        await repository.record_check("group-a", check)
+        rooms = await repository.list_rooms()
+        assert len(rooms) == 1
+        assert rooms[0].latest_check == check
+        assert await database.schema_version() == 2
+        await database.close()
+
+    asyncio.run(scenario())

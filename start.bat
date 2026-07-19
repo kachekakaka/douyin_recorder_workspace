@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal EnableExtensions
 cd /d "%~dp0"
-title douyin_recorder_workspace P0
+title douyin_recorder_workspace P1A
 
 call scripts\windows\prepare-python.bat runtime
 if errorlevel 1 goto :failed

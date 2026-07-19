@@ -1,10 +1,10 @@
 # Third-Party Notices
 
-本文件记录 P0 实际依赖与技术参考边界。发布包含第三方二进制或复制代码时必须继续补充完整 LICENSE、NOTICE、上游提交 SHA 和修改说明。
+本文件记录当前实际依赖与技术参考边界。发布包含第三方二进制或复制代码时必须继续补充完整 LICENSE、NOTICE、上游提交 SHA 和修改说明。
 
-## P0 独立实现声明
+## 独立实现声明
 
-以下源码由本项目独立编写，没有复制第三方生成的 Proto、抓包样本或运行时代码：
+以下协议、页面解析、状态机、房间与媒体监督源码由本项目独立编写，没有复制第三方生成 Proto、抓包样本或运行时代码：
 
 - `app/douyin/protobuf_wire.py`
 - `app/douyin/envelope.py`
@@ -12,15 +12,19 @@
 - `app/douyin/timeline.py`
 - `app/douyin/replay.py`
 - `app/douyin/probe.py`
+- `app/douyin/live_page.py`
+- `app/rooms/*`
+- `app/media/ffmpeg.py`
+- `app/api/rooms.py`
 
-P0 只实现最小 outer envelope/wire inspection 与显式 contract，不包含从第三方仓库复制的完整抖音 schema。
+P0/P1A 只实现最小 outer envelope/wire inspection、显式 contract、受限公开页面解析和 FFmpeg 进程监督，不包含从第三方仓库复制的完整抖音 schema、签名算法或浏览器脚本。
 
 ## 参考但未复制
 
 - `kachekakaka/bili_workspace`：参考 FastAPI + 静态网页、Windows 入口、CI、配置/运行数据/媒体目录边界和 Git Bundle 恢复流程。
 - `qiaoruntao/douyin_contract`：参考 schema/method mapping 的生成思路和公开字段事实。基线审查未确认明确 LICENSE，因此没有复制其脚本、Rust 源码、`mapping.json` 或生成的 `.proto`。
 - `Johnserf-Seed/f2`：Apache License 2.0。仅对照公开的 WSS outer envelope、ACK 与 heartbeat 行为；本项目实现重新编写，未复制文件。
-- `biliup/biliup`：MIT License。仅作为后续抖音流解析与录制异常处理的工程参考；P0 未复制其实现。
+- `biliup/biliup`：MIT License。仅作为抖音流解析、画质回退和录制异常处理的工程参考；P1A 的 `live_page.py` 与 `ffmpeg.py` 仍为独立实现，没有复制上游文件。
 
 ## Python 与前端依赖
 

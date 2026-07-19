@@ -69,7 +69,7 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
     async def scenario() -> None:
         database = Database(tmp_path / "userdata" / "douyin_recorder.db")
         await database.initialize()
-        assert await database.schema_version() == 1
+        assert await database.schema_version() == 2
         assert str(await database.pragma("journal_mode")).casefold() == "wal"
         assert int(await database.pragma("foreign_keys")) == 1
 

@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.api import rooms_router
 from app.paths import ROOT
 from app.settings import Settings
 from app.state import AppState
@@ -34,6 +35,7 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
         openapi_url="/api/openapi.json",
     )
     app.state.app_state = app_state
+    app.include_router(rooms_router)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -71,13 +73,14 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
             "ok": True,
             "data": {
                 "version": __version__,
-                "phase": "P0",
+                "phase": "P1A",
                 "loopback_only": True,
                 "authentication_implemented": False,
                 "protocol_live_verified": app_state.protocol_contract.live_verified,
                 "limitations": [
-                    "目标直播间尚未提供用户授权的现场 WSS 样本",
-                    "协议 contract 仍为 provisional，P1 完整录制闭环未开始",
+                    "目标推荐收礼人消息仍未形成经审查的现场 fixture",
+                    "P1A 只启动房间管理、直播页/流候选解析与 FFmpeg Supervisor 基础",
+                    "完整自动录制与 recipient 入库闭环尚未启用",
                 ],
                 **data,
             },
