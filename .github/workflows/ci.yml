@@ -40,10 +40,17 @@ jobs:
           python -m pip install -r requirements/dev.lock
           python -m pip check
 
-      - name: Verify repository and P0 source boundaries
+      - name: Verify repository baseline
+        shell: bash
         run: |
-          python tools/verify_repository_baseline.py
-          python tools/verify_source.py
+          set -o pipefail
+          python tools/verify_repository_baseline.py 2>&1 | tee verify-baseline.log
+
+      - name: Verify P0 source boundaries
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/verify_source.py 2>&1 | tee verify-source.log
 
       - name: Compile Python
         run: python -m compileall -q app tests tools
@@ -82,12 +89,15 @@ jobs:
             --output-dir "$RUNNER_TEMP/recovery" \
             --label "ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-      - name: Upload failed pytest log
+      - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-${{ matrix.python-version }}-${{ github.run_attempt }}
-          path: pytest.log
+          name: diagnostics-${{ matrix.python-version }}-${{ github.run_attempt }}
+          path: |
+            verify-baseline.log
+            verify-source.log
+            pytest.log
           if-no-files-found: ignore
           retention-days: 7
 

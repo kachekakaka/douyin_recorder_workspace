@@ -7,7 +7,7 @@ from app.douyin.recipient import RecipientContract
 from app.douyin.replay import run_fixture
 from app.paths import ROOT
 
-CONTRACT = ROOT / "app" / "douyin" / "contracts" / "provisional_v1.json"
+CONTRACT = ROOT / "tests" / "replay" / "contracts" / "recipient.synthetic-v1.json"
 FIXTURE = ROOT / "tests" / "replay" / "fixtures" / "recipient-strict-unknown.synthetic.json"
 
 
@@ -17,6 +17,7 @@ def test_strict_unknown_fixture_is_deterministic_and_not_live_claimed(tmp_path: 
     second = run_fixture(FIXTURE, contract=contract)
 
     assert first.to_dict() == second.to_dict()
+    assert contract.live_verified is False
     assert first.fixture_synthetic is True
     assert first.fixture_live_verified is False
     assert first.target_messages > 0

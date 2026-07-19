@@ -28,6 +28,7 @@ _REQUIRED_P0 = (
     "tools/douyin_browser_probe.py",
     "tools/create_recovery_assets.py",
     "tools/backup_runtime.py",
+    "tests/replay/contracts/recipient.synthetic-v1.json",
     "tests/replay/fixtures/recipient-strict-unknown.synthetic.json",
     "requirements/runtime.lock",
     "requirements/dev.lock",
@@ -81,16 +82,24 @@ def main() -> int:
             errors.append(f"dev.lock 缺少 {package}")
 
     try:
-        contract = RecipientContract.load(
+        provisional_contract = RecipientContract.load(
             ROOT / "app" / "douyin" / "contracts" / "provisional_v1.json"
         )
-        if contract.target_method != TARGET_METHOD:
+        if provisional_contract.target_method != TARGET_METHOD:
             errors.append("协议 contract 目标 method 不一致")
-        if contract.live_verified:
+        if provisional_contract.live_verified:
             errors.append("尚无经审查现场样本，provisional contract 不得标记 live_verified=true")
+
+        synthetic_contract = RecipientContract.load(
+            ROOT / "tests" / "replay" / "contracts" / "recipient.synthetic-v1.json"
+        )
+        if synthetic_contract.target_method != TARGET_METHOD:
+            errors.append("合成 replay contract 目标 method 不一致")
+        if synthetic_contract.live_verified:
+            errors.append("合成 replay contract 不得标记 live_verified=true")
         replay = run_fixture(
             ROOT / "tests" / "replay" / "fixtures" / "recipient-strict-unknown.synthetic.json",
-            contract=contract,
+            contract=synthetic_contract,
         )
         if not replay.fixture_synthetic or replay.fixture_live_verified:
             errors.append("P0 replay fixture 的 synthetic/live_verified 标志不安全")

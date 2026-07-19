@@ -10,9 +10,15 @@ on:
       duration_seconds:
         description: Headless browser observation window
         required: true
-        default: "45"
+        default: "60"
   push:
     branches: [feature/p0-bootstrap]
+    paths:
+      - tools/douyin_room_preflight.py
+      - tools/douyin_browser_probe.py
+      - .github/workflows/live-preflight.yml
+  pull_request:
+    branches: [main]
     paths:
       - tools/douyin_room_preflight.py
       - tools/douyin_browser_probe.py
@@ -31,7 +37,7 @@ jobs:
     timeout-minutes: 8
     env:
       ROOM_ID: ${{ inputs.room_id || '73504089679' }}
-      DURATION_SECONDS: ${{ inputs.duration_seconds || '45' }}
+      DURATION_SECONDS: ${{ inputs.duration_seconds || '60' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
