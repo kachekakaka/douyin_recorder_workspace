@@ -12,7 +12,7 @@ on:
         required: true
         default: "60"
   push:
-    branches: [feature/p0-bootstrap]
+    branches: ["feature/**"]
     paths:
       - tools/douyin_room_preflight.py
       - tools/douyin_browser_probe.py
