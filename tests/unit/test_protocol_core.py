@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from app.douyin import TARGET_METHOD
 from app.douyin.envelope import build_message, build_push_frame, build_response, inspect_frame
 from app.douyin.protobuf_wire import (

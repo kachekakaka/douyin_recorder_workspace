@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+
 from app.db import Database
 from app.paths import RuntimePaths
 from app.settings import Settings, SettingsError, sync_config

@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 import app.state as state_module
 from app.main import create_app
 from app.paths import ROOT, RuntimePaths
 from app.runtime import ToolStatus
 from app.settings import Settings
-from fastapi.testclient import TestClient
 
 
 def _settings(tmp_path: Path) -> Settings:

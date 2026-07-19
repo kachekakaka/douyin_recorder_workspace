@@ -12,7 +12,6 @@ if str(ROOT) not in sys.path:
 from app.douyin import TARGET_METHOD  # noqa: E402
 from app.douyin.recipient import RecipientContract  # noqa: E402
 from app.douyin.replay import run_fixture  # noqa: E402
-
 from tools.verify_repository_baseline import main as verify_baseline  # noqa: E402
 
 _REQUIRED_P0 = (

@@ -8,6 +8,7 @@ if /I not "%MODE%"=="runtime" if /I not "%MODE%"=="dev" (
   endlocal & exit /b 1
 )
 set "PY=%CD%\.venv\Scripts\python.exe"
+set "LOCK_HASH_FILE="
 
 if exist "%PY%" goto :check_version
 
@@ -40,7 +41,12 @@ if /I "%MODE%"=="dev" (
   set "LOCK=requirements\runtime.lock"
   set "HASH_FILES=requirements\runtime.lock"
 )
-for /f "usebackq delims=" %%H in (`"%PY%" -c "import hashlib,pathlib; h=hashlib.sha256(); [h.update(pathlib.Path(p).read_bytes()) for p in r'%HASH_FILES%'.split()]; print(h.hexdigest())"`) do set "LOCK_HASH=%%H"
+set "LOCK_HASH_FILE=%TEMP%\douyin_recorder_lock_%RANDOM%_%RANDOM%.txt"
+"%PY%" -c "import hashlib,pathlib; h=hashlib.sha256(); [h.update(pathlib.Path(p).read_bytes()) for p in r'%HASH_FILES%'.split()]; print(h.hexdigest())" > "%LOCK_HASH_FILE%"
+if errorlevel 1 goto :failed
+set /p LOCK_HASH=<"%LOCK_HASH_FILE%"
+del /q "%LOCK_HASH_FILE%" >nul 2>nul
+set "LOCK_HASH_FILE="
 if not defined LOCK_HASH goto :failed
 set "STAMP=.venv\.requirements-%MODE%.sha256"
 set "INSTALLED_HASH="
@@ -52,6 +58,7 @@ if errorlevel 1 goto :failed
 >"%STAMP%" echo %LOCK_HASH%
 
 :ready
+if defined LOCK_HASH_FILE if exist "%LOCK_HASH_FILE%" del /q "%LOCK_HASH_FILE%" >nul 2>nul
 endlocal & set "PY=%PY%" & exit /b 0
 
 :missing
@@ -67,5 +74,6 @@ echo [错误] 现有 .venv 不是 Python 3.12/3.13。请先备份后删除 .venv
 endlocal & exit /b 1
 
 :failed
+if defined LOCK_HASH_FILE if exist "%LOCK_HASH_FILE%" del /q "%LOCK_HASH_FILE%" >nul 2>nul
 echo [错误] Python 依赖准备失败。
 endlocal & exit /b 1
