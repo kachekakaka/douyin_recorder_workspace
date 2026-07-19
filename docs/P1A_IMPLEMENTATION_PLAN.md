@@ -1,25 +1,25 @@
 # P1A 实施计划：单房间媒体基础
 
-状态：**P1A 工程实现已完成，正在等待最终远端 CI 与 PR Review；不宣称完整 P1 已完成。**
+状态：**P1A 工程实现与远端验收已完成，PR #4 已为 Ready for review；不宣称完整 P1 已完成。**
 关联：GitHub Issue #3  
 分支：`feature/p1a-single-room-media-foundation`
 
 ## 为什么拆出 P1A
 
-P0 的可恢复工程骨架、严格合成回放和现场预检工具已经合并到 `main`，但授权账号的无登录 headless 预检没有观察到 IM WebSocket，`WebcastGroupLiveGiftRecipientRecommendMessage` 的真实空值、重连、重复与字段事实仍未验收。
+P0 的可恢复工程骨架、严格合成回放和现场预检工具已经合并到 `main`，但授权房间的无登录 headless 预检没有观察到 IM WebSocket，`WebcastGroupLiveGiftRecipientRecommendMessage` 的真实空值、重连、重复与字段事实仍未验收。
 
 媒体连续录制、房间配置、公开直播页解析和 FFmpeg 进程监督并不需要伪造这些协议结论，因此 P1 拆为：
 
 - **P1A 单房间媒体基础**：房间 CRUD、直播页/流候选解析、FFmpeg Supervisor、可测试进程与文件边界；
 - **P1B recipient 接线与单房间闭环**：真实 WSS、目标消息入库、Waiting/Active/Unknown 与媒体场次联动。
 
-P1A 已完成当前计划中的工程实现，但不能把它描述为完整 P1 已完成，也不能修改运行 contract 的 `live_verified=false`。
+P1A 已完成当前计划中的工程实现和远端验收，但不能把它描述为完整 P1 已完成，也不能修改运行 contract 的 `live_verified=false`。
 
 ## 真实流候选 resolver 实施结果（2026-07-19）
 
 三个经用户授权且在测试时确认正在直播的房间，均在脱敏 Chrome/CDP 观察中实际请求了
 `live.douyin.com/webcast/room/web/enter`，并各自发起了一个 allowlist `douyincdn.com`
-FLV 媒体请求。对应远端验证为 CI `29684016011` 和脱敏预检 `29684015993`。
+FLV 媒体请求。首次对应远端验证为 CI `29684016011` 和脱敏预检 `29684015993`。
 这说明主要缺口不是“房间不可访问”，而是初始 HTML 解析发生得太早，真实候选在页面运行后的
 结构化接口或媒体网络请求中出现。
 
@@ -54,11 +54,11 @@ P1A 已按以下最小可靠链路实现，不把浏览器扩展为长期 RoomWo
 - 进程内 resolver 和有界候选缓存已实现；
 - 房间立即检查、disable/URL 修改清理和 API/SQLite 泄漏回归测试已完成；
 - 三个授权房间的脱敏现场回归已观察到实际 FLV 媒体响应；
-- 最终 CI 全绿后更新 P1A 报告和 PR 描述，并改为 Ready for review。
+- 最终 CI、三房间脱敏预检、P1A 报告和 PR 描述均已更新，PR 已改为 Ready for review。
 
 ## 已交付
 
-1. `GET/POST/PATCH /api/rooms` 和 enable/disable/check actions；
+1. 房间列表、创建、单房间读取、PATCH 和 enable/disable/check actions；
 2. 抖音号与 `live.douyin.com` URL 规范化，拒绝非 HTTPS、凭据、自定义端口、多段路径和非抖音主机；
 3. 手动跟随受限抖音主机重定向，并拒绝重定向凭据、自定义端口和越界主机；
 4. 从公开页面的 JSON/字符串化 JSON 中提取 room/web_rid/title 与 FLV/HLS 画质候选；
@@ -69,7 +69,7 @@ P1A 已按以下最小可靠链路实现，不把浏览器扩展为长期 RoomWo
 9. 本地 `lavfi` smoke 工具和自动测试；
 10. SQLite schema v3：`room_checks` 审计表；同一规范化房间 URL 不允许新增第二个 `room_key`；
 11. 静态网页的直播间新增、启停和立即检查入口；
-12. 回环 `Host` 校验和浏览器同源写操作校验，降低 DNS rebinding/CSRF 风险［
+12. 回环 `Host` 校验和浏览器同源写操作校验，降低 DNS rebinding/CSRF 风险；
 13. 应用内 resolver 的一次性 Chrome/CDP 回退、进程组清理、2xx 媒体响应校验和 TTL 私密候选缓存。
 
 ## 本批次仍不做
@@ -95,7 +95,7 @@ P1A 已按以下最小可靠链路实现，不把浏览器扩展为长期 RoomWo
 
 - schema v3 可从空库、v1 和 v2 库按校验和递增迁移；
 - 房间 CRUD/check API、重复 URL、显式 null、Host 与 Origin 边界均有集成测试；
-- 合成直播页 fixture 稳定解析 3 个候选；畸形端口、空 userinfo、越界候选和未信任 source key 不进入公开结果［
+- 合成直播页 fixture 稳定解析 3 个候选；畸形端口、空 userinfo、越界候选和未信任 source key 不进入公开结果；
 - 非 2xx 页面保持 error，不把网络/风控失败猜成 offline；
 - 假进程证明 stdout/stderr 同时消费、Windows `SIGBREAK`/Unix `SIGINT` 停止及回调异常隔离；
 - 本机/CI 安装 FFmpeg 时，`python tools/ffmpeg_supervisor_smoke.py` 生成 MKV 分片并解析 segment CSV；
@@ -104,8 +104,8 @@ P1A 已按以下最小可靠链路实现，不把浏览器扩展为长期 RoomWo
 ## 进入 P1B 前仍需的现场事实
 
 - 普通交互浏览器实际建立的当前 WSS；
-- 目标 method 在成员切换、空对象和重连时的真实行为［
-- 当前字段号、`msg_id` 重复、`change_reason_enum` 和延迟分布［
+- 目标 method 在成员切换、空对象和重连时的真实行为；
+- 当前字段号、`msg_id` 重复、`change_reason_enum` 和延迟分布；
 - 至少一条经去标识、人工审查、可回放的现场 fixture。
 
 以上事实完成前，`app/douyin/contracts/provisional_v1.json` 必须继续保持 `live_verified=false`，Issue #1 继续开放。
