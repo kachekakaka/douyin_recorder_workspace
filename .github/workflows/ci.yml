@@ -90,7 +90,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ffmpeg -hide_banner -version | head -n 1 | tee "$RUNNER_TEMP/ffmpeg-smoke-output.log"
+          ffmpeg -hide_banner -version 2>&1 | tee "$RUNNER_TEMP/ffmpeg-smoke-output.log"
           python tools/ffmpeg_supervisor_smoke.py \
             --duration 2 \
             --output-dir "$RUNNER_TEMP/ffmpeg-smoke" \
