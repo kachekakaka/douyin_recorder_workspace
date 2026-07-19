@@ -9,6 +9,7 @@ from app import __version__
 from app.db import Database
 from app.douyin.live_page import DouyinLivePageClient
 from app.douyin.recipient import RecipientContract
+from app.douyin.stream_resolver import DouyinStreamResolver
 from app.rooms import RoomRepository, RoomService
 from app.runtime import ToolStatus, check_tool
 from app.settings import Settings
@@ -32,14 +33,15 @@ class AppState:
         settings: Settings,
         *,
         live_page_client: DouyinLivePageClient | None = None,
+        stream_resolver: DouyinStreamResolver | None = None,
     ) -> AppState:
         contract = RecipientContract.load(settings.protocol_contract_path)
         database = Database(settings.paths.database_path)
         room_repository = RoomRepository(database)
-        room_service = RoomService(
-            room_repository,
-            live_page_client or DouyinLivePageClient(),
+        resolver = stream_resolver or DouyinStreamResolver(
+            live_page_client or DouyinLivePageClient()
         )
+        room_service = RoomService(room_repository, resolver)
         return cls(
             settings=settings,
             database=database,

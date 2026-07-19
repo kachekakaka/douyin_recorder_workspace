@@ -203,3 +203,81 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
         assert "signature=" not in detail_json.casefold()
 
     assert fake_client.closed is True
+
+
+def test_room_check_browser_fallback_stays_redacted_and_disable_clears_cache(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from app.douyin.live_page import stream_candidate_from_url
+    from app.douyin.stream_resolver import BrowserObservation, DouyinStreamResolver
+
+    async def fake_check_tool(name: str, configured: str, *, timeout: float = 5.0):
+        del timeout
+        return ToolStatus(name, configured, configured, True, f"{name} test version", "")
+
+    class UnknownPageClient:
+        closed = False
+
+        async def check(self, room_reference: str):
+            return inspect_live_page(
+                b"<html><body>public room page</body></html>",
+                room_url=room_reference,
+                http_status=200,
+                final_url=room_reference,
+            )
+
+        async def close(self) -> None:
+            self.closed = True
+
+    async def browser(room_url: str, duration: float) -> BrowserObservation:
+        del duration
+        candidate = stream_candidate_from_url(
+            "https://pull.example.douyincdn.com/live/PATH-SECRET/live.flv"
+            "?sign=QUERY-SECRET&expire=9",
+            source_path="browser/network-response",
+        )
+        assert candidate is not None
+        return BrowserObservation(
+            candidates=(candidate,),
+            page_loaded=True,
+            page_http_status=200,
+            final_host="live.douyin.com",
+            final_path="/79907888978",
+        )
+
+    monkeypatch.setattr(state_module, "check_tool", fake_check_tool)
+    page_client = UnknownPageClient()
+    resolver = DouyinStreamResolver(page_client, browser_observer=browser)  # type: ignore[arg-type]
+    state = AppState.create(_settings(tmp_path), stream_resolver=resolver)
+    app = create_app(state=state)
+
+    with TestClient(app, base_url="http://127.0.0.1:3399") as client:
+        created = client.post(
+            "/api/rooms",
+            json={"room_key": "group-c", "room_url": "79907888978"},
+        )
+        assert created.status_code == 201
+        checked = client.post("/api/rooms/group-c/actions/check")
+        assert checked.status_code == 200
+        report = checked.json()["data"]
+        assert report["live_state"] == "live"
+        assert report["stream_candidate_count"] == 1
+        rendered = json.dumps(report, sort_keys=True)
+        assert "PATH-SECRET" not in rendered
+        assert "QUERY-SECRET" not in rendered
+        assert "url" not in report["stream_candidates"][0]
+        assert "path" not in report["stream_candidates"][0]
+        assert resolver.cached_candidates("79907888978")
+        disabled = client.post("/api/rooms/group-c/actions/disable")
+        assert disabled.status_code == 200
+        assert resolver.cached_candidates("79907888978") == ()
+
+    with sqlite3.connect(state.settings.paths.database_path) as connection:
+        detail_json = connection.execute(
+            "SELECT detail_json FROM room_checks ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        assert "PATH-SECRET" not in detail_json
+        assert "QUERY-SECRET" not in detail_json
+        assert "https://pull" not in detail_json
+
+    assert page_client.closed is True

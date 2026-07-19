@@ -11,6 +11,8 @@ from app.douyin.live_page import (
     LivePageError,
     inspect_live_page,
     normalize_room_reference,
+    select_stream_candidate,
+    stream_candidate_from_url,
 )
 from app.paths import ROOT
 
@@ -136,6 +138,7 @@ def test_client_rejects_redirects_outside_allowlist_or_with_credentials_or_ports
         f"https://@live.douyin.com/{ROOM_ID}",
         f"https://live.douyin.com:99999/{ROOM_ID}",
         f"https://live.douyin.com:444/{ROOM_ID}",
+        f"https://live.douyin.com/{ROOM_ID}#fragment",
         "https://[broken",
     ):
         assert _run_redirect(location) == ("error", "LivePageError")
@@ -187,3 +190,68 @@ def test_blocked_unknown_and_network_error_are_distinct() -> None:
         assert failed.candidates == ()
 
     asyncio.run(scenario())
+
+
+def test_network_candidate_helper_and_quality_fallback_are_strict() -> None:
+    origin = stream_candidate_from_url(
+        "https://pull.example.douyincdn.com/live/origin.flv?biz_quality=origin&sign=SECRET",
+        source_path="browser/network-response",
+    )
+    sd = stream_candidate_from_url(
+        "https://pull.example.douyincdn.com/live/sd.flv?biz_quality=sd&sign=SECRET",
+        source_path="browser/network-response",
+    )
+    hls = stream_candidate_from_url(
+        "https://pull.example.douyincdn.com/live/hd.m3u8?quality=hd&token=SECRET",
+        source_path="browser/network-response",
+    )
+    assert origin is not None and sd is not None and hls is not None
+    assert select_stream_candidate((origin, sd, hls), protocol="flv", quality="hd") is sd
+    assert select_stream_candidate((origin, sd, hls), protocol="hls", quality="origin") is hls
+    assert stream_candidate_from_url(
+        "https://pull.example.douyincdn.com/live/x.flv?sign=SECRET#fragment",
+        source_path="browser/network-response",
+    ) is None
+    assert stream_candidate_from_url(
+        "https://attacker.invalid/live/x.flv?sign=SECRET",
+        source_path="browser/network-response",
+    ) is None
+
+
+def test_public_query_keys_are_bounded_and_sanitized() -> None:
+    query = "&".join(f"unsafe key {index}=SECRET" for index in range(40))
+    candidate = stream_candidate_from_url(
+        f"https://pull.example.douyincdn.com/live/x.flv?{query}",
+        source_path="browser/network-response",
+    )
+    assert candidate is not None
+    public = candidate.to_public_dict()
+    assert public["query_keys"] == ["<key>"]
+    assert "SECRET" not in repr(public)
+
+
+def test_final_page_path_is_canonical_or_redacted() -> None:
+    canonical = inspect_live_page(
+        b"<html></html>",
+        room_url=ROOM_ID,
+        http_status=200,
+        final_url=ROOM_URL,
+    )
+    assert canonical.snapshot.final_path == f"/{ROOM_ID}"
+
+    redacted = inspect_live_page(
+        b"<html></html>",
+        room_url=ROOM_ID,
+        http_status=200,
+        final_url="https://www.douyin.com/private/PATH-TOKEN",
+    )
+    assert redacted.snapshot.final_path == "/<redacted-path>"
+    assert "PATH-TOKEN" not in repr(redacted.snapshot.to_public_dict())
+
+    with pytest.raises(LivePageError):
+        inspect_live_page(
+            b"<html></html>",
+            room_url=ROOM_ID,
+            http_status=200,
+            final_url=f"{ROOM_URL}#fragment",
+        )

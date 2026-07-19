@@ -21,6 +21,34 @@ MAX_STREAM_CANDIDATES = 64
 MAX_TEXT_URL_MATCHES = 256
 MAX_WSS_MATCHES = 256
 MAX_STREAM_URL_CHARS = 16_384
+MAX_PUBLIC_QUERY_KEYS = 32
+
+_SAFE_QUERY_KEY_RE = re.compile(r"^[A-Za-z0-9_.~-]{1,64}$")
+_PUBLIC_QUERY_KEY_ALLOWLIST = {
+    "abr_pts",
+    "arch_hrchy",
+    "auth_key",
+    "biz_quality",
+    "cdn_name",
+    "codec",
+    "expire",
+    "expires",
+    "line",
+    "only_audio",
+    "quality",
+    "session",
+    "sign",
+    "signature",
+    "stream_quality",
+    "suffix",
+    "token",
+    "txsecret",
+    "txtime",
+    "volcsecret",
+    "volctime",
+    "wssecret",
+    "wstime",
+}
 
 _ROOM_REFERENCE_RE = re.compile(r"^[A-Za-z0-9_.-]{3,80}$")
 _RENDER_DATA_RE = re.compile(
@@ -71,6 +99,10 @@ _QUALITY_ALIASES = {
 }
 _SAFE_SOURCE_KEYS = {
     "app",
+    "browser",
+    "network_response",
+    "resolver",
+    "revalidated",
     "room",
     "stream_url",
     "live_core_sdk_data",
@@ -141,7 +173,23 @@ class StreamCandidate:
         suffix = Path(raw_path).suffix.casefold()
         if suffix not in {".flv", ".m3u8"}:
             suffix = ""
-        query_keys = sorted({key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)})
+        try:
+            pairs = parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+                max_num_fields=128,
+            )
+        except ValueError:
+            pairs = [("<many-or-invalid>", "")]
+        query_keys = sorted(
+            {
+                key
+                if _SAFE_QUERY_KEY_RE.fullmatch(key)
+                and key.casefold() in _PUBLIC_QUERY_KEY_ALLOWLIST
+                else "<key>"
+                for key, _ in pairs
+            }
+        )[:MAX_PUBLIC_QUERY_KEYS]
         return {
             "protocol": self.protocol,
             "quality": self.quality,
@@ -270,7 +318,7 @@ def _normalize_stream_url(value: str) -> str | None:
         host = (parsed.hostname or "").casefold().rstrip(".")
     except ValueError:
         return None
-    if parsed.scheme not in {"http", "https"} or not host:
+    if parsed.scheme not in {"http", "https"} or not host or parsed.fragment:
         return None
     expected_port = 80 if parsed.scheme == "http" else 443
     if (
@@ -321,6 +369,79 @@ def _protocol_from_path_or_url(path: tuple[str, ...], url: str) -> str | None:
     if "hls" in joined or parsed_path.endswith(".m3u8"):
         return "hls"
     return None
+
+
+def _quality_from_url(url: str) -> str:
+    parsed = urlsplit(url)
+    tokens = [part for part in re.split(r"[^A-Za-z0-9]+", parsed.path.casefold()) if part]
+    try:
+        pairs = parse_qsl(parsed.query, keep_blank_values=True, max_num_fields=128)
+    except ValueError:
+        pairs = []
+    for key, value in pairs:
+        if key.casefold() not in {"quality", "biz_quality", "stream_quality"}:
+            continue
+        tokens.extend(
+            part for part in re.split(r"[^A-Za-z0-9]+", value.casefold()) if part
+        )
+    for token in tokens:
+        if token in _QUALITY_ALIASES:
+            return _QUALITY_ALIASES[token]
+    return "unknown"
+
+
+def stream_candidate_from_url(
+    value: str,
+    *,
+    source_path: str = "network-response",
+    quality_hint: str | None = None,
+) -> StreamCandidate | None:
+    normalized = _normalize_stream_url(value)
+    if normalized is None:
+        return None
+    protocol = _protocol_from_path_or_url((source_path,), normalized)
+    if protocol is None:
+        return None
+    quality = _QUALITY_ALIASES.get(
+        _normalize_key(quality_hint or ""),
+        _quality_from_url(normalized),
+    )
+    safe_source = _safe_source_path(tuple(source_path.split("/")))
+    return StreamCandidate(
+        protocol=protocol,
+        quality=quality,
+        url=normalized,
+        source_path=safe_source,
+    )
+
+
+def select_stream_candidate(
+    candidates: tuple[StreamCandidate, ...],
+    *,
+    protocol: str,
+    quality: str,
+) -> StreamCandidate | None:
+    if protocol not in {"flv", "hls"}:
+        raise ValueError("protocol must be flv or hls")
+    normalized_quality = _QUALITY_ALIASES.get(_normalize_key(quality), "origin")
+    available = [candidate for candidate in candidates if candidate.protocol == protocol]
+    if not available:
+        return None
+    requested_index = _QUALITY_ORDER.index(normalized_quality)
+    preferred = (
+        normalized_quality,
+        *_QUALITY_ORDER[requested_index + 1 : -1],
+        *reversed(_QUALITY_ORDER[:requested_index]),
+        "unknown",
+    )
+    for item in preferred:
+        matching = sorted(
+            (candidate for candidate in available if candidate.quality == item),
+            key=lambda candidate: (candidate.host, candidate.url),
+        )
+        if matching:
+            return matching[0]
+    return sorted(available, key=lambda candidate: (candidate.host, candidate.url))[0]
 
 
 def _looks_like_json(value: str) -> bool:
@@ -396,6 +517,13 @@ def _first_scalar(
         if text and (allow_zero or text != "0"):
             return text
     return None
+
+
+def _safe_final_page_path(path: str, reference: NormalizedRoomReference) -> str:
+    normalized = path or "/"
+    if normalized.rstrip("/") == f"/{reference.room_id_hint}":
+        return normalized
+    return "/<redacted-path>"
 
 
 def _safe_source_path(path: tuple[str, ...]) -> str:
@@ -506,9 +634,10 @@ def inspect_live_page(
     if (
         final.scheme != "https"
         or final_host not in _ALLOWED_PAGE_HOSTS
-        or final.username
-        or final.password
+        or final.username is not None
+        or final.password is not None
         or final_port not in (None, 443)
+        or bool(final.fragment)
     ):
         raise LivePageError(f"直播页最终地址不在允许范围: {final_host or '<empty>'}")
 
@@ -561,7 +690,11 @@ def inspect_live_page(
         live_state=live_state,
         http_status=http_status,
         final_host=final_host,
-        final_path=final.path or "/",
+        final_path=(
+            _safe_final_page_path(final.path or "/", reference)
+            if final_host == "live.douyin.com"
+            else "/<redacted-path>"
+        ),
         external_room_id=external_room_id,
         web_rid=web_rid,
         title=title[:500],
@@ -633,9 +766,10 @@ class DouyinLivePageClient:
                         if (
                             parsed.scheme != "https"
                             or host not in _ALLOWED_PAGE_HOSTS
-                            or parsed.username
-                            or parsed.password
+                            or parsed.username is not None
+                            or parsed.password is not None
                             or port not in (None, 443)
+                            or bool(parsed.fragment)
                         ):
                             raise LivePageError("直播页重定向离开允许的抖音主机或包含危险凭据")
                         url = urlunsplit(("https", host, parsed.path or "/", parsed.query, ""))
@@ -670,7 +804,7 @@ class DouyinLivePageClient:
                 live_state="error",
                 http_status=last_status,
                 final_host=(urlsplit(url).hostname or "").casefold(),
-                final_path=urlsplit(url).path or "/",
+                final_path=_safe_final_page_path(urlsplit(url).path or "/", reference),
                 external_room_id=None,
                 web_rid=None,
                 title="",

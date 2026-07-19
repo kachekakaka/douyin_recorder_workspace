@@ -207,9 +207,10 @@ async def run_network_probe(
                     status = response.get("status")
                     if not isinstance(url, str):
                         continue
-                    media = _public_candidate_from_network_url(url, room_url=room_url)
-                    if media is not None:
-                        _merge_candidate(media_candidates, media)
+                    if isinstance(status, (int, float)) and 200 <= int(status) < 300:
+                        media = _public_candidate_from_network_url(url, room_url=room_url)
+                        if media is not None:
+                            _merge_candidate(media_candidates, media)
                     endpoint = _safe_room_api_endpoint(url)
                     if endpoint is not None and isinstance(status, (int, float)):
                         pending_api[request_id] = (*endpoint, int(status))
