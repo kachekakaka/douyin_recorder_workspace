@@ -87,10 +87,14 @@ jobs:
 
       - name: FFmpeg Supervisor local smoke
         if: matrix.python-version == '3.12'
+        shell: bash
         run: |
+          set -o pipefail
+          ffmpeg -hide_banner -version | head -n 1 | tee "$RUNNER_TEMP/ffmpeg-smoke-output.log"
           python tools/ffmpeg_supervisor_smoke.py \
             --duration 2 \
-            --output-dir "$RUNNER_TEMP/ffmpeg-smoke"
+            --output-dir "$RUNNER_TEMP/ffmpeg-smoke" \
+            2>&1 | tee -a "$RUNNER_TEMP/ffmpeg-smoke-output.log"
 
       - name: Create and restore source recovery assets
         if: matrix.python-version == '3.12'
@@ -114,6 +118,8 @@ jobs:
             ${{ runner.temp }}/verify-source.log
             ${{ runner.temp }}/ruff.log
             ${{ runner.temp }}/pytest.log
+            ${{ runner.temp }}/ffmpeg-smoke-output.log
+            ${{ runner.temp }}/ffmpeg-smoke/ffmpeg.log
             ${{ runner.temp }}/recovery.log
           if-no-files-found: ignore
           retention-days: 7
