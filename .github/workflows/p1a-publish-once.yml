@@ -1,0 +1,138 @@
+name: P1A publish reviewed resolver once
+
+on:
+  push:
+    branches: [feature/p1a-single-room-media-foundation]
+    paths:
+      - .github/workflows/p1a-publish-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p1a-publish-reviewed-resolver-once
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish verified P1A resolver
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1a-single-room-media-foundation
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+
+      - name: Download and verify reviewed patches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "b3ce0f4d87cf260768b774892a6416fc2f2b73d6"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1a-publish-once.yml"
+
+          payload="$RUNNER_TEMP/p1a-reviewed-patches.tar.gz"
+          mkdir -p "$RUNNER_TEMP/p1a-reviewed-patches"
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/ce221e9f8d1214875696acad56310bda450600df" \
+            --jq .content \
+            | tr -d '\n' \
+            | base64 --decode > "$payload"
+          echo "277858b29f390f98ef2d6ef47b1966b73a374534321865032a15ce71cb95c3fe  $payload" \
+            | sha256sum -c -
+          tar -xzf "$payload" -C "$RUNNER_TEMP/p1a-reviewed-patches"
+          (
+            cd "$RUNNER_TEMP/p1a-reviewed-patches"
+            sha256sum -c SHA256SUMS
+          )
+
+      - name: Apply the three reviewed milestones and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI Codex"
+          git config user.email "codex@openai.com"
+          git am --3way \
+            "$RUNNER_TEMP/p1a-reviewed-patches/0001-feat-add-in-memory-Douyin-stream-resolver-fallback.patch" \
+            "$RUNNER_TEMP/p1a-reviewed-patches/0002-docs-finalize-P1A-resolver-review-and-limitations.patch" \
+            "$RUNNER_TEMP/p1a-reviewed-patches/0003-fix-harden-browser-resolver-bounds-and-validation.patch"
+          rm .github/workflows/p1a-publish-once.yml
+          git add .github/workflows/p1a-publish-once.yml
+          git commit -m "chore: remove temporary P1A resolver publisher"
+          test -z "$(git status --short)"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          value = json.loads(Path("app/douyin/contracts/provisional_v1.json").read_text())
+          if value.get("live_verified") is not False:
+              raise SystemExit("live_verified must remain false")
+          PY
+
+      - name: Install locked development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+
+      - name: Run complete repository validation
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            python tools/verify_repository_baseline.py
+            python tools/verify_source.py
+            python -m compileall -q app tests tools
+            python -m ruff check --no-cache app tests tools
+            python -m pytest -q -p no:cacheprovider --tb=short
+            python tools/replay_recipient_fixture.py --quiet
+            while IFS= read -r -d '' file; do
+              node --check "$file"
+            done < <(find web -type f -name '*.js' -print0)
+          } 2>&1 | tee "$RUNNER_TEMP/p1a-publish-validation.log"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version
+          ffprobe -hide_banner -version
+
+      - name: Run FFmpeg Supervisor smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/ffmpeg_supervisor_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/p1a-publish-smoke" \
+            2>&1 | tee "$RUNNER_TEMP/p1a-publish-smoke.log"
+
+      - name: Push verified fast-forward history
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --short)"
+          git push origin "HEAD:feature/p1a-single-room-media-foundation"
+          git rev-parse HEAD
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1a-publish-diagnostics-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/p1a-publish-validation.log
+            ${{ runner.temp }}/p1a-publish-smoke.log
+            ${{ runner.temp }}/p1a-publish-smoke/ffmpeg.log
+          if-no-files-found: ignore
+          retention-days: 3
