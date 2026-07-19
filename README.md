@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> 当前处于 **P0：可恢复工程骨架与协议事实验证**。完整自动录制闭环属于 P1，尚未开始。
+> 当前分支已完成 **P1A：单房间管理、直播流候选解析与 FFmpeg Supervisor 基础** 的工程实现，正在进行最终 PR 审查；完整自动录制、长期轮询与真实 recipient 接线尚未完成。
 
 ## 不可改变的业务口径
 
@@ -14,27 +14,44 @@ WebcastGroupLiveGiftRecipientRecommendMessage
 
 更新当前推荐收礼人。首条有效事件前、空 recipient、IM 断线及重连后尚未收到新事件时均为 `Unknown`。不使用 OCR、人脸、声纹、礼物、弹幕、连麦成员、昵称或画面位置补全；推荐对象变化不得重启 FFmpeg。
 
-## P0 已实现
-
-- Python 3.12/3.13 + FastAPI + 单 Uvicorn worker；
-- FastAPI 同源托管静态 HTML/CSS/原生 JavaScript ES Modules；
-- `/healthz`、`/readyz`、`/api/status`；
-- SQLite WAL、递增校验和 migration、单写连接和一致性 backup API；
-- FFmpeg/ffprobe readiness；
-- 有界 Protobuf wire inspector、PushFrame/Response/Message envelope 与 gzip 上限；
-- 显式 contract、严格 recipient reducer、合成 replay fixture；
-- 单房间显式 WSS 探测工具；
-- 无登录 HTTP 直播页预检和 Chrome/CDP WSS 安全观察工具；
-- Windows `start.bat`、`update.bat`、`verify.bat`、`backup.bat`；
-- GitHub Actions：Python 3.12/3.13、Ruff、pytest、replay、前端语法、Windows 自检和 Git Bundle 恢复验证。
-
-P0 的现场 contract 仍保持：
+运行 contract 继续保持：
 
 ```text
 live_verified=false
 ```
 
-合成 fixture 通过不等于真实直播间已验证。
+授权房间 `79907888978`、`94771623313`、`40727638291` 的无登录 headless 预检均成功访问公开页面，并在浏览器网络层观察到 allowlist `douyincdn.com` FLV 媒体响应；仍没有观察到 IM WebSocket 或目标推荐收礼人消息。一次未观察到不能证明永久不支持。
+
+## 已实现
+
+### P0
+
+- Python 3.12/3.13、FastAPI、单 Uvicorn worker；
+- 同源静态 HTML/CSS/原生 JavaScript ES Modules；
+- SQLite WAL、校验和 migration、单写连接与 backup API；
+- `/healthz`、`/readyz`、`/api/status`；
+- FFmpeg/ffprobe readiness；
+- 有界 Protobuf wire inspector、PushFrame/Response/Message envelope；
+- 严格 Waiting/Active/Unknown reducer 和确定性合成 replay；
+- WSS probe、HTTP/Chrome 脱敏现场预检；
+- Windows `start.bat`、`update.bat`、`verify.bat`、`backup.bat`；
+- GitHub Actions 与 Git Bundle/源码 ZIP 恢复验证。
+
+### P1A 当前批次
+
+- `GET/POST/PATCH /api/rooms` 和 `GET /api/rooms/{room_key}`；
+- enable/disable/check actions；
+- 抖音号与 `https://live.douyin.com/<id>` 严格规范化；
+- 受限重定向和 SSRF 边界；
+- 公开直播页 JSON/字符串化 JSON 解析；
+- 应用内 `DouyinStreamResolver`：静态页面优先，缺少候选时执行一次性、受控 Chrome/CDP 网络回退；
+- 私密候选使用最多 32 个房间、120 秒 TTL 的进程内缓存；URL 修改、disable、关闭或过期时清除；
+- FLV/HLS/画质流候选只保留在进程内存；
+- API/SQLite/日志只返回 host、媒体后缀、path/url hash 和 query key，不返回原始流路径；
+- FFmpeg argv、progress、segment CSV 和 RecorderSupervisor 核心；输入层再次执行 CDN allowlist、协议默认端口与安全路径段校验，默认拒绝覆盖已有媒体；
+- 本地 lavfi smoke 工具；
+- SQLite schema v3：`room_checks` 审计、规范化 `room_url` 唯一索引和检查查询索引；
+- 网页新增直播间、启停和立即检查。
 
 ## 快速开始
 
@@ -48,9 +65,11 @@ start.bat
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\python -m pip install -r requirements/dev.lock
-# Linux/macOS:
+# Windows
+.venv\Scripts\python -m pip install -r requirements/dev.lock
+# Linux/macOS
 .venv/bin/python -m pip install -r requirements/dev.lock
+
 python -m app
 ```
 
@@ -60,7 +79,42 @@ python -m app
 http://127.0.0.1:3399/
 ```
 
-P0 尚未实现管理员认证，因此配置会拒绝 `0.0.0.0`、局域网地址和公网绑定。
+P1A 尚未实现管理员认证，配置会拒绝 `0.0.0.0`、局域网和公网绑定。HTTP 层同时拒绝非回环 `Host` 和浏览器跨源写操作，降低本地服务被 DNS rebinding/CSRF 操作的风险。
+
+## 房间 API
+
+```text
+GET   /api/rooms
+POST  /api/rooms
+GET   /api/rooms/{room_key}
+PATCH /api/rooms/{room_key}
+POST  /api/rooms/{room_key}/actions/check
+POST  /api/rooms/{room_key}/actions/enable
+POST  /api/rooms/{room_key}/actions/disable
+```
+
+创建示例：
+
+```json
+{
+  "room_key": "group-a",
+  "room_url": "73504089679",
+  "quality": "origin",
+  "protocol": "flv"
+}
+```
+
+“立即检查”先执行受限 HTTP 解析；没有候选时才使用一次性 Chrome/CDP 回退。完整签名流 URL 只存在于当前进程内存，API、SQLite、日志和网页仅返回 host、媒体后缀、query key 与 path/url SHA-256。
+
+## FFmpeg Supervisor 本地 smoke
+
+本机安装 FFmpeg 后：
+
+```bash
+python tools/ffmpeg_supervisor_smoke.py --duration 3
+```
+
+它使用 FFmpeg `lavfi` 生成短测试音视频，验证进程监督、progress、segment CSV 和 MKV 文件写入，不访问抖音。
 
 ## 验证
 
@@ -81,49 +135,21 @@ python -m ruff check --no-cache app tests tools
 python -m pytest -q -p no:cacheprovider --tb=short
 ```
 
-## 经授权直播间预检
-
-只做不保存正文的 HTTP 预检：
-
-```bash
-python tools/douyin_room_preflight.py --room-id 73504089679
-```
-
-在装有 Chrome/Chromium 的环境中，通过 CDP 观察浏览器实际创建的 WSS，并只输出脱敏统计：
-
-```bash
-python tools/douyin_browser_probe.py \
-  --room-id 73504089679 \
-  --duration 60 \
-  --output userdata/protocol-probes/browser-report.json
-```
-
-完整签名 WSS URL、Cookie、原始帧和真实 payload 不得提交仓库。现场取证流程见 `docs/protocol/CAPTURE_RUNBOOK.md`。
-
 ## GitHub 与防丢
 
-GitHub `main`/tag 是代码唯一权威源。每个可验证里程碑必须 commit + push；未 push 的内容不算保存。
-
-创建源码与运行数据备份：
+GitHub `main`/tag 是代码唯一权威源。每个可验证里程碑必须 commit + push；未 push 内容不算保存。
 
 ```bat
 backup.bat
 ```
 
-它会：
-
-1. 创建完整 Git Bundle、源码 ZIP 和 SHA-256；
-2. 从 Bundle 临时克隆并执行 `git fsck` 与仓库基线校验；
-3. 使用 SQLite backup API 备份数据库；
-4. 保存实际配置和 records 文件索引。
-
-`backups/` 被 Git 忽略。运行数据备份可能含私人配置，禁止上传公开仓库。
+会创建并恢复验证 Git Bundle、源码 ZIP、SHA-256，并通过 SQLite backup API 保存运行数据副本。`backups/` 不进 Git，运行数据包可能含私人配置，禁止上传公开仓库。
 
 ## 目录边界
 
 ```text
 config/     默认模板；实际 config.json、runtime.env 和凭据不进 Git
-userdata/   SQLite、日志、任务、缓存、临时状态和私人协议探测；不进 Git
+userdata/   SQLite、日志、任务、缓存、私人协议探测和 smoke；不进 Git
 records/    原始媒体、导出和代理；不进 Git
 ```
 
@@ -133,7 +159,8 @@ records/    原始媒体、导出和代理；不进 Git
 2. `docs/PRE_IMPLEMENTATION_REVIEW.md`
 3. `docs/architecture/architecture-baseline-v2.0.md`
 4. `docs/P0_IMPLEMENTATION_REPORT.md`
-5. `docs/protocol/P0_PROTOCOL_STATUS.md`
-6. `docs/GITHUB_WORKFLOW.md`
+5. `docs/P1A_IMPLEMENTATION_PLAN.md`
+6. `docs/protocol/P0_PROTOCOL_STATUS.md`
+7. `docs/GITHUB_WORKFLOW.md`
 
-架构基线：`v2.0`，状态为“批准实施，附开工前修订项”。
+架构基线：`v2.0`。P1A 关联 GitHub Issue #3；真实目标消息事实继续由 Issue #1 跟踪。

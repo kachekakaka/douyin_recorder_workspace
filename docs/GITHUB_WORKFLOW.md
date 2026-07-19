@@ -36,7 +36,7 @@ git pull --ff-only origin main
 - 有未提交受 Git 管理修改的工作区；
 - 非 fast-forward 更新。
 
-## 2. P0 必须通过的 CI
+## 2. P0/P1A 必须通过的 CI
 
 - Python 3.12、3.13；
 - 依赖锁与 `pip check`；
@@ -47,9 +47,10 @@ git pull --ff-only origin main
 - 合成 fixture 确定性 replay；
 - 原生 JavaScript 语法；
 - Windows `verify.bat`；
+- FFmpeg Supervisor 本地 `lavfi` smoke；
 - Git Bundle、源码 ZIP、SHA-256 和临时克隆恢复。
 
-现场抖音预检使用独立 workflow，不作为稳定单元测试的通过条件。网络失败或未观察到目标消息只写入脱敏报告，不能自动推导协议结论。
+现场抖音预检使用独立 workflow，对授权房间执行公开 HTTP、无登录 Chrome/CDP WSS 和媒体网络观察。网络失败、未观察到目标消息或只观察到媒体候选均写入脱敏报告，不能自动推导 recipient 协议结论。报告不得包含 Cookie、完整接口/流 URL、query value、响应正文、原始帧或真实 payload。
 
 ## 3. 防止“窗口丢内容”
 

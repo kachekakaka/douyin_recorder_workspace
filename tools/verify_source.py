@@ -9,28 +9,41 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.db.migrations import MIGRATIONS  # noqa: E402
 from app.douyin import TARGET_METHOD  # noqa: E402
+from app.douyin.live_page import inspect_live_page  # noqa: E402
 from app.douyin.recipient import RecipientContract  # noqa: E402
 from app.douyin.replay import run_fixture  # noqa: E402
 from tools.verify_repository_baseline import main as verify_baseline  # noqa: E402
 
-_REQUIRED_P0 = (
+_REQUIRED = (
     "app/main.py",
+    "app/security.py",
     "app/settings.py",
     "app/db/core.py",
     "app/db/migrations/__init__.py",
     "app/douyin/probe.py",
     "app/douyin/replay.py",
     "app/douyin/timeline.py",
+    "app/douyin/live_page.py",
+    "app/douyin/stream_resolver.py",
+    "app/rooms/models.py",
+    "app/rooms/repository.py",
+    "app/rooms/service.py",
+    "app/media/ffmpeg.py",
+    "app/api/rooms.py",
     "tools/douyin_wss_probe.py",
     "tools/douyin_room_preflight.py",
     "tools/douyin_browser_probe.py",
+    "tools/douyin_network_probe.py",
+    "tools/ffmpeg_supervisor_smoke.py",
     "tools/create_recovery_assets.py",
     "tools/backup_runtime.py",
-    "tests/replay/contracts/recipient.synthetic-v1.json",
     "tests/replay/fixtures/recipient-strict-unknown.synthetic.json",
+    "tests/fixtures/douyin/live-page.synthetic.html",
     "requirements/runtime.lock",
     "requirements/dev.lock",
+    "docs/P1A_IMPLEMENTATION_PLAN.md",
     "start.bat",
     "update.bat",
     "verify.bat",
@@ -57,15 +70,77 @@ def _lock_packages(path: Path) -> list[str]:
     return output
 
 
+def _verify_recipient_contract(errors: list[str]) -> None:
+    try:
+        contract = RecipientContract.load(
+            ROOT / "app" / "douyin" / "contracts" / "provisional_v1.json"
+        )
+        if contract.target_method != TARGET_METHOD:
+            errors.append("协议 contract 目标 method 不一致")
+        if contract.live_verified:
+            errors.append("尚无经审查现场样本，provisional contract 不得标记 live_verified=true")
+        replay_contract = RecipientContract.load(
+            ROOT / "tests" / "replay" / "contracts" / "recipient.synthetic-v1.json"
+        )
+        if replay_contract.live_verified:
+            errors.append("合成 replay contract 不得标记 live_verified=true")
+        replay = run_fixture(
+            ROOT / "tests" / "replay" / "fixtures" / "recipient-strict-unknown.synthetic.json",
+            contract=replay_contract,
+        )
+        if not replay.fixture_synthetic or replay.fixture_live_verified:
+            errors.append("recipient replay fixture 的 synthetic/live_verified 标志不安全")
+        if replay.target_messages <= 0 or replay.target_decode_failures != 0:
+            errors.append("recipient replay 未稳定解码目标消息")
+        intervals = replay.reducer_snapshot.get("intervals")
+        if not isinstance(intervals, list) or not any(
+            isinstance(item, dict)
+            and item.get("status") == "unknown"
+            and item.get("reason") == "im_disconnected"
+            for item in intervals
+        ):
+            errors.append("recipient replay 未覆盖 Unknown(im_disconnected)")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        errors.append(f"协议 contract/replay 校验失败: {exc}")
+
+
+def _verify_live_page_fixture(errors: list[str]) -> None:
+    try:
+        result = inspect_live_page(
+            (ROOT / "tests" / "fixtures" / "douyin" / "live-page.synthetic.html").read_bytes(),
+            room_url="73504089679",
+            http_status=200,
+            final_url="https://live.douyin.com/73504089679",
+        )
+        if len(result.candidates) != 3:
+            errors.append(f"直播页 fixture 应解析 3 个流候选，实际 {len(result.candidates)}")
+        public = json.dumps(result.snapshot.to_public_dict(), ensure_ascii=False, sort_keys=True)
+        if "SECRET" in public or "PRIVATE" in public:
+            errors.append("直播页公开结果泄露合成签名值")
+        public_candidates = result.snapshot.to_public_dict()["stream_candidates"]
+        if any("url" in item for item in public_candidates):
+            errors.append("直播页公开候选包含完整 url 字段")
+        if any("path" in item for item in public_candidates):
+            errors.append("直播页公开候选包含原始 path 字段")
+        if any(
+            not isinstance(item.get("path_sha256"), str)
+            or len(str(item.get("path_sha256"))) != 64
+            for item in public_candidates
+        ):
+            errors.append("直播页公开候选缺少 path SHA-256")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        errors.append(f"直播页 fixture 校验失败: {exc}")
+
+
 def main() -> int:
     errors: list[str] = []
     if verify_baseline() != 0:
         errors.append("仓库基线校验失败")
 
-    for rel in _REQUIRED_P0:
+    for rel in _REQUIRED:
         path = ROOT / rel
         if not path.is_file() or path.is_symlink():
-            errors.append(f"缺少 P0 必需普通文件: {rel}")
+            errors.append(f"缺少当前阶段必需普通文件: {rel}")
 
     runtime_packages = _lock_packages(ROOT / "requirements" / "runtime.lock")
     dev_packages = _lock_packages(ROOT / "requirements" / "dev.lock")
@@ -80,40 +155,12 @@ def main() -> int:
         if package not in dev_packages:
             errors.append(f"dev.lock 缺少 {package}")
 
-    try:
-        provisional_contract = RecipientContract.load(
-            ROOT / "app" / "douyin" / "contracts" / "provisional_v1.json"
-        )
-        if provisional_contract.target_method != TARGET_METHOD:
-            errors.append("协议 contract 目标 method 不一致")
-        if provisional_contract.live_verified:
-            errors.append("尚无经审查现场样本，provisional contract 不得标记 live_verified=true")
+    versions = [migration.version for migration in MIGRATIONS]
+    if versions != sorted(set(versions)) or not versions or versions[-1] < 2:
+        errors.append(f"SQLite migration 版本无效: {versions}")
 
-        synthetic_contract = RecipientContract.load(
-            ROOT / "tests" / "replay" / "contracts" / "recipient.synthetic-v1.json"
-        )
-        if synthetic_contract.target_method != TARGET_METHOD:
-            errors.append("合成 replay contract 目标 method 不一致")
-        if synthetic_contract.live_verified:
-            errors.append("合成 replay contract 不得标记 live_verified=true")
-        replay = run_fixture(
-            ROOT / "tests" / "replay" / "fixtures" / "recipient-strict-unknown.synthetic.json",
-            contract=synthetic_contract,
-        )
-        if not replay.fixture_synthetic or replay.fixture_live_verified:
-            errors.append("P0 replay fixture 的 synthetic/live_verified 标志不安全")
-        if replay.target_messages <= 0 or replay.target_decode_failures != 0:
-            errors.append("P0 replay 未稳定解码目标消息")
-        intervals = replay.reducer_snapshot.get("intervals")
-        if not isinstance(intervals, list) or not any(
-            isinstance(item, dict)
-            and item.get("status") == "unknown"
-            and item.get("reason") == "im_disconnected"
-            for item in intervals
-        ):
-            errors.append("P0 replay 未覆盖 Unknown(im_disconnected)")
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        errors.append(f"协议 contract/replay 校验失败: {exc}")
+    _verify_recipient_contract(errors)
+    _verify_live_page_fixture(errors)
 
     for root_name in ("app", "tools", "web"):
         root = ROOT / root_name
@@ -134,11 +181,11 @@ def main() -> int:
                     errors.append(f"{rel} 命中禁止模式 {label}")
 
     if errors:
-        print("[失败] P0 源码校验发现问题：")
+        print("[失败] 当前阶段源码校验发现问题：")
         for item in errors:
             print(f"  - {item}")
         return 1
-    print("[通过] P0 工程骨架、依赖锁、严格单一信号 replay 与安全边界正常。")
+    print("[通过] P1A 房间/媒体基础、严格 recipient 语义、依赖锁与安全边界正常。")
     return 0
 
 

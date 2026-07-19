@@ -192,4 +192,38 @@ CREATE TABLE IF NOT EXISTS protocol_probe_runs (
 );
 """,
     ),
+    Migration(
+        2,
+        "p1a_room_checks",
+        r"""
+CREATE TABLE IF NOT EXISTS room_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_key TEXT NOT NULL REFERENCES rooms(room_key) ON DELETE CASCADE,
+    checked_at_ms INTEGER NOT NULL,
+    live_state TEXT NOT NULL CHECK (
+        live_state IN ('live', 'offline', 'unknown', 'blocked', 'error')
+    ),
+    http_status INTEGER NULL,
+    final_host TEXT NOT NULL DEFAULT '',
+    final_path TEXT NOT NULL DEFAULT '/',
+    external_room_id TEXT NULL,
+    web_rid TEXT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    stream_candidate_count INTEGER NOT NULL DEFAULT 0 CHECK (stream_candidate_count >= 0),
+    detail_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_room_checks_room_time
+    ON room_checks(room_key, checked_at_ms DESC);
+""",
+    ),
+    Migration(
+        3,
+        "p1a_room_url_uniqueness",
+        r"""
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rooms_room_url
+    ON rooms(room_url);
+CREATE INDEX IF NOT EXISTS ix_room_checks_room_id
+    ON room_checks(room_key, id DESC);
+""",
+    ),
 )

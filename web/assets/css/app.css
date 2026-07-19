@@ -5,10 +5,12 @@ body { margin: 0; }
 h1 { margin: 4px 0 8px; font-size: clamp(28px, 4vw, 46px); }
 p { line-height: 1.65; }
 .kicker { margin: 0; color: #9fc7dc; letter-spacing: .14em; font-size: 12px; font-weight: 700; }
-button { border: 0; border-radius: 9px; padding: 11px 16px; font: inherit; font-weight: 700; cursor: pointer; background: white; color: #172f46; }
+button { border: 0; border-radius: 9px; padding: 11px 16px; font: inherit; font-weight: 700; cursor: pointer; background: #172f46; color: white; }
+.site-header button { background: white; color: #172f46; }
+button.secondary { background: #e9f0f5; color: #172f46; padding: 8px 12px; }
 button:disabled { opacity: .55; cursor: wait; }
 main { max-width: 1120px; margin: 0 auto; padding: 28px 20px 60px; }
-.notice, .panel, .card { background: white; border: 1px solid #dbe4eb; border-radius: 14px; box-shadow: 0 8px 28px rgba(23, 47, 70, .06); }
+.notice, .panel, .card, .room-card { background: white; border: 1px solid #dbe4eb; border-radius: 14px; box-shadow: 0 8px 28px rgba(23, 47, 70, .06); }
 .notice { padding: 18px 22px; border-left: 5px solid #c88826; }
 .notice p { margin-bottom: 0; }
 code { overflow-wrap: anywhere; }
@@ -16,12 +18,21 @@ code { overflow-wrap: anywhere; }
 .card { padding: 20px; min-height: 150px; display: flex; flex-direction: column; gap: 9px; }
 .card span { color: #607286; }
 .card strong { font-size: 25px; }
-.card small { color: #607286; overflow-wrap: anywhere; }
+.card small, .room-card small { color: #607286; overflow-wrap: anywhere; }
 .good { color: #167052; }
 .bad { color: #a53030; }
 .warn { color: #9a671b; }
-.panel { padding: 22px 26px; }
+.panel { padding: 22px 26px; margin-top: 20px; }
 .panel h2 { margin-top: 0; }
 .panel li { margin: 9px 0; line-height: 1.5; }
 .error { color: #a53030; }
-@media (max-width: 620px) { .site-header { align-items: stretch; flex-direction: column; } button { width: 100%; } }
+.muted { color: #607286; }
+.room-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: end; }
+.room-form label { display: grid; gap: 7px; color: #465b70; font-size: 14px; font-weight: 700; }
+.room-form input, .room-form select { width: 100%; border: 1px solid #bac9d5; border-radius: 8px; padding: 10px 12px; font: inherit; background: white; color: #172033; }
+.room-list { display: grid; gap: 12px; }
+.room-card { padding: 18px; box-shadow: none; }
+.room-card > div:first-child { display: flex; flex-direction: column; gap: 5px; }
+.room-card p { margin: 9px 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 620px) { .site-header { align-items: stretch; flex-direction: column; } .site-header button, .room-form button { width: 100%; } .room-form { grid-template-columns: 1fr; } }

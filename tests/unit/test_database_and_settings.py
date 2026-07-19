@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from app.db import Database
+from app.db import Database, MigrationError
+from app.db.migrations import MIGRATIONS
 from app.paths import RuntimePaths
 from app.settings import Settings, SettingsError, sync_config
 
@@ -69,7 +70,7 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
     async def scenario() -> None:
         database = Database(tmp_path / "userdata" / "douyin_recorder.db")
         await database.initialize()
-        assert await database.schema_version() == 1
+        assert await database.schema_version() == 3
         assert str(await database.pragma("journal_mode")).casefold() == "wal"
         assert int(await database.pragma("foreign_keys")) == 1
 
@@ -82,6 +83,12 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
             "VALUES (?, ?, ?, ?)",
             ("room-a", "https://live.douyin.com/73504089679", 1, 1),
         )
+        with pytest.raises(sqlite3.IntegrityError):
+            await database.execute(
+                "INSERT INTO rooms(room_key, room_url, created_at_ms, updated_at_ms) "
+                "VALUES (?, ?, ?, ?)",
+                ("room-b", "https://live.douyin.com/73504089679", 1, 1),
+            )
         await database.execute(
             "INSERT INTO sessions(id, room_key, status, started_at_ms, runtime_instance_id) "
             "VALUES (?, ?, 'active', ?, ?)",
@@ -100,5 +107,48 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
         with sqlite3.connect(backup) as connection:
             assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
             assert connection.execute("SELECT COUNT(*) FROM rooms").fetchone() == (1,)
+
+    asyncio.run(scenario())
+
+
+def test_room_url_uniqueness_migration_fails_explicitly_on_existing_duplicates(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "userdata" / "douyin_recorder.db"
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                checksum TEXT NOT NULL,
+                applied_at_ms INTEGER NOT NULL
+            )
+            """
+        )
+        for migration in MIGRATIONS[:2]:
+            connection.executescript(migration.sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, name, checksum, applied_at_ms) "
+                "VALUES (?, ?, ?, ?)",
+                (migration.version, migration.name, migration.checksum, 1),
+            )
+        connection.execute(
+            "INSERT INTO rooms(room_key, room_url, created_at_ms, updated_at_ms) "
+            "VALUES (?, ?, ?, ?)",
+            ("room-a", "https://live.douyin.com/73504089679", 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO rooms(room_key, room_url, created_at_ms, updated_at_ms) "
+            "VALUES (?, ?, ?, ?)",
+            ("room-b", "https://live.douyin.com/73504089679", 1, 1),
+        )
+        connection.commit()
+
+    async def scenario() -> None:
+        database = Database(database_path)
+        with pytest.raises(MigrationError, match="重复数据"):
+            await database.initialize()
 
     asyncio.run(scenario())

@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 
 from app import __version__
 from app.db import Database
+from app.douyin.live_page import DouyinLivePageClient
 from app.douyin.recipient import RecipientContract
+from app.douyin.stream_resolver import DouyinStreamResolver
+from app.rooms import RoomRepository, RoomService
 from app.runtime import ToolStatus, check_tool
 from app.settings import Settings
 
@@ -17,18 +20,34 @@ class AppState:
     settings: Settings
     database: Database
     protocol_contract: RecipientContract
+    room_repository: RoomRepository
+    room_service: RoomService
     runtime_instance_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     ffmpeg: ToolStatus | None = None
     ffprobe: ToolStatus | None = None
 
     @classmethod
-    def create(cls, settings: Settings) -> AppState:
+    def create(
+        cls,
+        settings: Settings,
+        *,
+        live_page_client: DouyinLivePageClient | None = None,
+        stream_resolver: DouyinStreamResolver | None = None,
+    ) -> AppState:
         contract = RecipientContract.load(settings.protocol_contract_path)
+        database = Database(settings.paths.database_path)
+        room_repository = RoomRepository(database)
+        resolver = stream_resolver or DouyinStreamResolver(
+            live_page_client or DouyinLivePageClient()
+        )
+        room_service = RoomService(room_repository, resolver)
         return cls(
             settings=settings,
-            database=Database(settings.paths.database_path),
+            database=database,
             protocol_contract=contract,
+            room_repository=room_repository,
+            room_service=room_service,
         )
 
     async def start(self) -> None:
@@ -51,6 +70,7 @@ class AppState:
         schema_version = await self.database.schema_version()
         ffmpeg = self.ffmpeg or await check_tool("ffmpeg", self.settings.ffmpeg_path)
         ffprobe = self.ffprobe or await check_tool("ffprobe", self.settings.ffprobe_path)
+        rooms = await self.room_repository.list_rooms()
         ready = schema_version > 0 and ffmpeg.ready and ffprobe.ready
         return {
             "ready": ready,
@@ -59,6 +79,8 @@ class AppState:
             "schema_version": schema_version,
             "database_path": str(self.settings.paths.database_path),
             "records_path": str(self.settings.paths.records_dir),
+            "room_count": len(rooms),
+            "enabled_room_count": sum(1 for room in rooms if room.enabled),
             "ffmpeg": ffmpeg.to_dict(),
             "ffprobe": ffprobe.to_dict(),
             "protocol_contract": self.protocol_contract.to_public_dict(),
@@ -72,4 +94,7 @@ class AppState:
                 (ended_at_ms, self.runtime_instance_id),
             )
         finally:
-            await self.database.close()
+            try:
+                await self.room_service.close()
+            finally:
+                await self.database.close()

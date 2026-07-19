@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, feature/p0-bootstrap]
+    branches: [main, "feature/**"]
   pull_request:
   workflow_dispatch:
 
@@ -85,6 +85,25 @@ jobs:
               raise SystemExit("deterministic replay report differs from committed baseline")
           PY
 
+      - name: Install FFmpeg for supervisor smoke
+        if: matrix.python-version == '3.12'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version
+          ffprobe -hide_banner -version
+
+      - name: FFmpeg Supervisor local smoke
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -o pipefail
+          ffmpeg -hide_banner -version 2>&1 | tee "$RUNNER_TEMP/ffmpeg-smoke-output.log"
+          python tools/ffmpeg_supervisor_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/ffmpeg-smoke" \
+            2>&1 | tee -a "$RUNNER_TEMP/ffmpeg-smoke-output.log"
+
       - name: Create and restore source recovery assets
         if: matrix.python-version == '3.12'
         shell: bash
@@ -107,6 +126,8 @@ jobs:
             ${{ runner.temp }}/verify-source.log
             ${{ runner.temp }}/ruff.log
             ${{ runner.temp }}/pytest.log
+            ${{ runner.temp }}/ffmpeg-smoke-output.log
+            ${{ runner.temp }}/ffmpeg-smoke/ffmpeg.log
             ${{ runner.temp }}/recovery.log
           if-no-files-found: ignore
           retention-days: 7

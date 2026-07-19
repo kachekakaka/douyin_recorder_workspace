@@ -3,25 +3,27 @@ name: P0 Douyin live preflight
 on:
   workflow_dispatch:
     inputs:
-      room_id:
-        description: Authorized Douyin ID or live room path identifier
+      room_ids_json:
+        description: JSON array of authorized Douyin IDs or live room path identifiers
         required: true
-        default: "73504089679"
+        default: '["79907888978","94771623313","40727638291"]'
       duration_seconds:
         description: Headless browser observation window
         required: true
         default: "60"
   push:
-    branches: [feature/p0-bootstrap]
+    branches: ["feature/**"]
     paths:
       - tools/douyin_room_preflight.py
       - tools/douyin_browser_probe.py
+      - tools/douyin_network_probe.py
       - .github/workflows/live-preflight.yml
   pull_request:
     branches: [main]
     paths:
       - tools/douyin_room_preflight.py
       - tools/douyin_browser_probe.py
+      - tools/douyin_network_probe.py
       - .github/workflows/live-preflight.yml
 
 permissions:
@@ -33,10 +35,15 @@ concurrency:
 
 jobs:
   preflight:
+    name: Preflight ${{ matrix.room_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        room_id: ${{ fromJSON(inputs.room_ids_json || '["79907888978","94771623313","40727638291"]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      ROOM_ID: ${{ inputs.room_id || '73504089679' }}
+      ROOM_ID: ${{ matrix.room_id }}
       DURATION_SECONDS: ${{ inputs.duration_seconds || '60' }}
     steps:
       - uses: actions/checkout@v4
@@ -58,18 +65,27 @@ jobs:
             --output "$RUNNER_TEMP/http-preflight.json"
 
       - name: Browser/CDP WSS observation
-        continue-on-error: true
         run: |
           python tools/douyin_browser_probe.py \
             --room-id "$ROOM_ID" \
             --duration "$DURATION_SECONDS" \
             --output "$RUNNER_TEMP/browser-probe.json"
 
+      - name: Browser/CDP room API and media observation
+        run: |
+          python tools/douyin_network_probe.py \
+            --room-id "$ROOM_ID" \
+            --duration "$DURATION_SECONDS" \
+            --output "$RUNNER_TEMP/network-probe.json"
+
       - name: Print sanitized reports
         if: always()
         shell: bash
         run: |
-          for report in "$RUNNER_TEMP/http-preflight.json" "$RUNNER_TEMP/browser-probe.json"; do
+          for report in \
+            "$RUNNER_TEMP/http-preflight.json" \
+            "$RUNNER_TEMP/browser-probe.json" \
+            "$RUNNER_TEMP/network-probe.json"; do
             if [[ -f "$report" ]]; then
               echo "===== $(basename "$report") ====="
               cat "$report"
@@ -84,5 +100,6 @@ jobs:
           path: |
             ${{ runner.temp }}/http-preflight.json
             ${{ runner.temp }}/browser-probe.json
+            ${{ runner.temp }}/network-probe.json
           if-no-files-found: warn
           retention-days: 3
