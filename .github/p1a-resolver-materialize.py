@@ -144,9 +144,11 @@ def restore_final_tree() -> None:
         raise SystemExit("provisional contract must remain live_verified=false")
 
     expected = set(FILE_BLOBS) | TEMPORARY_PATHS
-    actual_text = command("git", "diff", "--name-only", text=True)
-    assert isinstance(actual_text, str)
-    actual = set(actual_text.splitlines())
+    tracked_text = command("git", "diff", "--name-only", text=True)
+    untracked_text = command("git", "ls-files", "--others", "--exclude-standard", text=True)
+    assert isinstance(tracked_text, str)
+    assert isinstance(untracked_text, str)
+    actual = set(tracked_text.splitlines()) | set(untracked_text.splitlines())
     if actual != expected:
         raise SystemExit(f"unexpected worktree diff: {sorted(actual)}")
     subprocess.run(["git", "diff", "--check"], check=True)
