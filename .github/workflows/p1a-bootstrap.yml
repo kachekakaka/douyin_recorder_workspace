@@ -1,6 +1,7 @@
 name: P1A source bootstrap
 
 on:
+  workflow_dispatch:
   push:
     branches: [feature/p1a-single-room-media-foundation]
     paths:
