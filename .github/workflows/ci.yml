@@ -191,7 +191,9 @@ jobs:
 
   materialize-resolver:
     name: Materialize verified P1A resolver
-    if: github.event_name == 'push' && github.ref_name == 'feature/p1a-single-room-media-foundation'
+    if: >-
+      (github.event_name == 'push' && github.ref_name == 'feature/p1a-single-room-media-foundation')
+      || (github.event_name == 'pull_request' && github.head_ref == 'feature/p1a-single-room-media-foundation')
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -213,7 +215,7 @@ jobs:
       - name: Materialize reviewed resolver sources
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_HEAD: ${{ github.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python .github/p1a-resolver-materialize.py
 
       - name: Install locked development dependencies
