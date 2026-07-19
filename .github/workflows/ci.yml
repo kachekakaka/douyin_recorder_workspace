@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, feature/p0-bootstrap]
+    branches: [main, "feature/**"]
   pull_request:
   workflow_dispatch:
 
@@ -84,6 +84,13 @@ jobs:
           if actual != expected:
               raise SystemExit("deterministic replay report differs from committed baseline")
           PY
+
+      - name: FFmpeg Supervisor local smoke
+        if: matrix.python-version == '3.12'
+        run: |
+          python tools/ffmpeg_supervisor_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/ffmpeg-smoke"
 
       - name: Create and restore source recovery assets
         if: matrix.python-version == '3.12'
