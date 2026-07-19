@@ -85,6 +85,14 @@ jobs:
               raise SystemExit("deterministic replay report differs from committed baseline")
           PY
 
+      - name: Install FFmpeg for supervisor smoke
+        if: matrix.python-version == '3.12'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version
+          ffprobe -hide_banner -version
+
       - name: FFmpeg Supervisor local smoke
         if: matrix.python-version == '3.12'
         shell: bash
