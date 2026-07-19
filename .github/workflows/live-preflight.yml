@@ -16,12 +16,14 @@ on:
     paths:
       - tools/douyin_room_preflight.py
       - tools/douyin_browser_probe.py
+      - tools/douyin_network_probe.py
       - .github/workflows/live-preflight.yml
   pull_request:
     branches: [main]
     paths:
       - tools/douyin_room_preflight.py
       - tools/douyin_browser_probe.py
+      - tools/douyin_network_probe.py
       - .github/workflows/live-preflight.yml
 
 permissions:
@@ -69,11 +71,21 @@ jobs:
             --duration "$DURATION_SECONDS" \
             --output "$RUNNER_TEMP/browser-probe.json"
 
+      - name: Browser/CDP room API and media observation
+        run: |
+          python tools/douyin_network_probe.py \
+            --room-id "$ROOM_ID" \
+            --duration "$DURATION_SECONDS" \
+            --output "$RUNNER_TEMP/network-probe.json"
+
       - name: Print sanitized reports
         if: always()
         shell: bash
         run: |
-          for report in "$RUNNER_TEMP/http-preflight.json" "$RUNNER_TEMP/browser-probe.json"; do
+          for report in \
+            "$RUNNER_TEMP/http-preflight.json" \
+            "$RUNNER_TEMP/browser-probe.json" \
+            "$RUNNER_TEMP/network-probe.json"; do
             if [[ -f "$report" ]]; then
               echo "===== $(basename "$report") ====="
               cat "$report"
@@ -88,5 +100,6 @@ jobs:
           path: |
             ${{ runner.temp }}/http-preflight.json
             ${{ runner.temp }}/browser-probe.json
+            ${{ runner.temp }}/network-probe.json
           if-no-files-found: warn
           retention-days: 3
