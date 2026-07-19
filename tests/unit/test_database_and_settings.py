@@ -70,7 +70,7 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
     async def scenario() -> None:
         database = Database(tmp_path / "userdata" / "douyin_recorder.db")
         await database.initialize()
-        assert await database.schema_version() == 3
+        assert await database.schema_version() == 4
         assert str(await database.pragma("journal_mode")).casefold() == "wal"
         assert int(await database.pragma("foreign_keys")) == 1
 
@@ -94,6 +94,29 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
             "VALUES (?, ?, 'active', ?, ?)",
             ("session-a", "room-a", 1, "runtime-a"),
         )
+        columns = await database.fetch_all("PRAGMA table_info(recipient_events)")
+        assert {str(row["name"]) for row in columns}.issuperset(
+            {
+                "envelope_msg_id",
+                "server_time_unit",
+                "payload_size",
+                "unknown_fields_json",
+            }
+        )
+        session_columns = await database.fetch_all("PRAGMA table_info(sessions)")
+        assert {str(row["name"]) for row in session_columns}.issuperset(
+            {
+                "protocol_contract_sha256",
+                "protocol_live_verified",
+                "started_monotonic_ns",
+                "ended_monotonic_ns",
+                "ended_runtime_instance_id",
+            }
+        )
+        interval_columns = await database.fetch_all("PRAGMA table_info(recipient_intervals)")
+        assert "ended_runtime_instance_id" in {
+            str(row["name"]) for row in interval_columns
+        }
         with pytest.raises(sqlite3.IntegrityError):
             await database.execute(
                 "INSERT INTO sessions(id, room_key, status, started_at_ms, runtime_instance_id) "
