@@ -1,0 +1,82 @@
+name: P0 Douyin live preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      room_id:
+        description: Authorized Douyin ID or live room path identifier
+        required: true
+        default: "73504089679"
+      duration_seconds:
+        description: Headless browser observation window
+        required: true
+        default: "45"
+  push:
+    branches: [feature/p0-bootstrap]
+    paths:
+      - tools/douyin_room_preflight.py
+      - tools/douyin_browser_probe.py
+      - .github/workflows/live-preflight.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-live-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ROOM_ID: ${{ inputs.room_id || '73504089679' }}
+      DURATION_SECONDS: ${{ inputs.duration_seconds || '45' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/runtime.lock
+      - name: Install locked runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/runtime.lock
+          python -m pip check
+
+      - name: HTTP live-room preflight
+        run: |
+          python tools/douyin_room_preflight.py \
+            --room-id "$ROOM_ID" \
+            --output "$RUNNER_TEMP/http-preflight.json"
+
+      - name: Browser/CDP WSS observation
+        continue-on-error: true
+        run: |
+          python tools/douyin_browser_probe.py \
+            --room-id "$ROOM_ID" \
+            --duration "$DURATION_SECONDS" \
+            --output "$RUNNER_TEMP/browser-probe.json"
+
+      - name: Print sanitized reports
+        if: always()
+        shell: bash
+        run: |
+          for report in "$RUNNER_TEMP/http-preflight.json" "$RUNNER_TEMP/browser-probe.json"; do
+            if [[ -f "$report" ]]; then
+              echo "===== $(basename "$report") ====="
+              cat "$report"
+            fi
+          done
+
+      - name: Upload sanitized reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: douyin-preflight-${{ env.ROOM_ID }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/http-preflight.json
+            ${{ runner.temp }}/browser-probe.json
+          if-no-files-found: warn
+          retention-days: 3

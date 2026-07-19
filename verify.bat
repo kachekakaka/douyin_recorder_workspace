@@ -2,31 +2,72 @@
 chcp 65001 >nul
 setlocal EnableExtensions
 cd /d "%~dp0"
+title douyin_recorder_workspace P0 - 完整自检
 
-where python >nul 2>nul
-if errorlevel 1 (
-  echo [错误] 未找到 Python。P0 将补充便携运行时；当前请安装 Python 3.12 或 3.13。
-  pause
-  exit /b 1
-)
-
-python tools\verify_repository_baseline.py
+call scripts\windows\prepare-python.bat dev
 if errorlevel 1 goto :failed
-python -m compileall -q app tests tools
+
+"%PY%" -m pip check
+if errorlevel 1 goto :failed
+"%PY%" tools\verify_repository_baseline.py
+if errorlevel 1 goto :failed
+"%PY%" tools\verify_source.py
+if errorlevel 1 goto :failed
+"%PY%" -m compileall -q app tests tools
+if errorlevel 1 goto :failed
+"%PY%" -m ruff check --no-cache app tests tools
+if errorlevel 1 goto :failed
+"%PY%" -m pytest -q -p no:cacheprovider --tb=short
+if errorlevel 1 goto :failed
+
+set "VERIFY_DIR=%TEMP%\douyin_recorder_verify_%RANDOM%_%RANDOM%"
+mkdir "%VERIFY_DIR%" >nul 2>nul
+"%PY%" tools\replay_recipient_fixture.py --quiet --json-output "%VERIFY_DIR%\replay.json" --markdown-output "%VERIFY_DIR%\replay.md"
+if errorlevel 1 goto :failed
+"%PY%" -c "import json,pathlib,sys; a=json.loads(pathlib.Path(r'%VERIFY_DIR%\replay.json').read_text(encoding='utf-8')); b=json.loads(pathlib.Path(r'docs\protocol\P0_SYNTHETIC_REPLAY_REPORT.json').read_text(encoding='utf-8')); sys.exit(0 if a==b else 1)"
 if errorlevel 1 goto :failed
 
 where node >nul 2>nul
-if errorlevel 1 goto :passed
-for /r "web" %%F in (*.js) do (
-  node --check "%%F"
+if errorlevel 1 (
+  echo [跳过] 未检测到 Node.js；浏览器运行不依赖 Node，GitHub CI 仍会检查前端语法。
+) else (
+  for /r "web" %%F in (*.js) do (
+    node --check "%%F"
+    if errorlevel 1 goto :failed
+  )
+)
+
+where ffmpeg >nul 2>nul
+if errorlevel 1 (
+  echo [警告] 未找到 FFmpeg；P0 源码测试通过，但 readiness 会保持未就绪。
+) else (
+  ffmpeg -hide_banner -version > "%VERIFY_DIR%\ffmpeg.txt" 2>&1
+  if errorlevel 1 goto :failed
+)
+where ffprobe >nul 2>nul
+if errorlevel 1 (
+  echo [警告] 未找到 ffprobe；P0 源码测试通过，但 readiness 会保持未就绪。
+) else (
+  ffprobe -hide_banner -version > "%VERIFY_DIR%\ffprobe.txt" 2>&1
   if errorlevel 1 goto :failed
 )
 
-:passed
-echo [通过] 当前仓库基线自检完成。
+where git >nul 2>nul
+if errorlevel 1 (
+  echo [跳过] 未检测到 Git，无法执行 Bundle 恢复演练。
+) else (
+  "%PY%" tools\create_recovery_assets.py --output-dir "%VERIFY_DIR%\recovery" --label verify --allow-dirty
+  if errorlevel 1 goto :failed
+)
+
+if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
+echo.
+echo ===== P0 完整自检通过 =====
 exit /b 0
 
 :failed
-echo [失败] 请查看上方错误。
+if defined VERIFY_DIR if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
+echo.
+echo ===== P0 自检失败，请查看上方信息 =====
 pause
 exit /b 1
