@@ -69,7 +69,7 @@ jobs:
           )
           parts: dict[int, str] = {}
           expected_total: int | None = None
-          expected_sha256: str | None = None
+          marker_sha256: str | None = None
           for item in comments:
               body = item.get("body") if isinstance(item, dict) else None
               if not isinstance(body, str):
@@ -80,19 +80,22 @@ jobs:
               part = int(match.group(1))
               total = int(match.group(2))
               digest = match.group(3)
-              if expected_total not in (None, total) or expected_sha256 not in (None, digest):
+              if expected_total not in (None, total) or marker_sha256 not in (None, digest):
                   raise SystemExit("payload metadata is inconsistent")
               expected_total = total
-              expected_sha256 = digest
+              marker_sha256 = digest
               parts[part] = match.group(4)
 
           if expected_total != 4 or sorted(parts) != [1, 2, 3, 4]:
               raise SystemExit(f"expected four payload parts, received {sorted(parts)}")
+          if marker_sha256 != "d7fed6eb56e42972acddecb9df76a6cca964ae2b760e68464d29818e0d7fe673":
+              raise SystemExit(f"unexpected payload marker checksum: {marker_sha256}")
           raw = base64.b64decode("".join(parts[index] for index in range(1, 5)), validate=True)
           actual_sha256 = hashlib.sha256(raw).hexdigest()
-          if actual_sha256 != expected_sha256:
+          uploaded_sha256 = "d20fe71c2036933c4030f586834354ee4c570e6a7205398dc5bd358f2bf3b4a4"
+          if actual_sha256 != uploaded_sha256:
               raise SystemExit(
-                  f"payload checksum mismatch: {actual_sha256} != {expected_sha256}"
+                  f"uploaded payload checksum mismatch: {actual_sha256} != {uploaded_sha256}"
               )
 
           root = Path.cwd().resolve()
@@ -121,7 +124,8 @@ jobs:
                   target.write_bytes(source.read())
 
           print(f"Applied {sum(1 for item in members if item.isfile())} files")
-          print(f"Payload SHA-256: {actual_sha256}")
+          print(f"Uploaded payload SHA-256: {actual_sha256}")
+          print(f"Original local bundle marker: {marker_sha256}")
           PY
 
           git diff --check 2>&1 | tee -a "$RUNNER_TEMP/p1a-bootstrap.log"
