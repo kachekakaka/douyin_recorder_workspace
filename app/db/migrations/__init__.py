@@ -226,4 +226,32 @@ CREATE INDEX IF NOT EXISTS ix_room_checks_room_id
     ON room_checks(room_key, id DESC);
 """,
     ),
+    Migration(
+        4,
+        "p1b_recipient_persistence_fields",
+        r"""
+ALTER TABLE sessions ADD COLUMN protocol_contract_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN protocol_live_verified INTEGER NOT NULL DEFAULT 0
+    CHECK (protocol_live_verified IN (0, 1));
+ALTER TABLE sessions ADD COLUMN started_monotonic_ns INTEGER NULL;
+ALTER TABLE sessions ADD COLUMN ended_monotonic_ns INTEGER NULL;
+ALTER TABLE sessions ADD COLUMN ended_runtime_instance_id TEXT NULL
+    REFERENCES runtime_instances(id);
+
+ALTER TABLE recipient_events ADD COLUMN envelope_msg_id TEXT NULL;
+ALTER TABLE recipient_events ADD COLUMN server_time_unit TEXT NULL;
+ALTER TABLE recipient_events ADD COLUMN payload_size INTEGER NOT NULL DEFAULT 0
+    CHECK (payload_size >= 0);
+ALTER TABLE recipient_events ADD COLUMN unknown_fields_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE recipient_intervals ADD COLUMN ended_runtime_instance_id TEXT NULL
+    REFERENCES runtime_instances(id);
+
+CREATE INDEX IF NOT EXISTS ix_recipient_events_session_received
+    ON recipient_events(session_id, received_at_ms, id);
+CREATE INDEX IF NOT EXISTS ix_recipient_intervals_session_started
+    ON recipient_intervals(session_id, started_at_ms, id);
+CREATE INDEX IF NOT EXISTS ix_sessions_room_started
+    ON sessions(room_key, started_at_ms DESC);
+""",
+    ),
 )
