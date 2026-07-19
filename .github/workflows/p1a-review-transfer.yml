@@ -1,0 +1,193 @@
+name: P1A review transfer
+
+on:
+  push:
+    branches: [agent/p1a-review-transfer-20260719-0439]
+    paths:
+      - .github/workflows/p1a-review-transfer.yml
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: p1a-review-transfer-20260719-0439
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: feature/p1a-single-room-media-foundation
+      TRANSFER_BRANCH: agent/p1a-review-transfer-20260719-0439
+      STAGING_BRANCH: agent/p1a-review-final-20260719-0439
+      EXPECTED_HEAD: 3b9c57e701eadd5f1d44e605056bf5a07bc36662
+      EXPECTED_TREE: e159824017fa94e59fddcadb0475232ee660359c
+      REVIEW_SHA256: 8b2ae98dfe0dc3ee231fbe59200d9b6286feb5ac0d7e53b8fadb60779388e6d9
+      FOLLOWUP_SHA256: ade0789260af9e1726aafeab81f57398ae544c29e98c5fd706784d0ed8dc8ebc
+    steps:
+      - name: Checkout transfer branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch and verify review payloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import os
+          import re
+          import urllib.request
+          from pathlib import Path
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{repository}/issues/3/comments?per_page=100",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "douyin-recorder-p1a-review-transfer",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              comments = json.load(response)
+
+          review_pattern = re.compile(
+              r"^<!-- P1A_REVIEW_PATCH sha256=([0-9a-f]{64}) encoding=gzip\+base64 -->\n"
+              r"([A-Za-z0-9+/=]+)\s*$"
+          )
+          followup_pattern = re.compile(
+              r"^<!-- P1A_FOLLOWUP_PATCH part=(\d+) total=(\d+) sha256=([0-9a-f]{64}) "
+              r"encoding=gzip\+base64 -->\n([A-Za-z0-9+/=]+)\s*$"
+          )
+
+          review_payloads: list[tuple[str, str]] = []
+          followup_parts: dict[int, str] = {}
+          followup_total: int | None = None
+          followup_marker_sha: str | None = None
+          for item in comments:
+              body = item.get("body") if isinstance(item, dict) else None
+              if not isinstance(body, str):
+                  continue
+              review_match = review_pattern.fullmatch(body)
+              if review_match is not None:
+                  review_payloads.append((review_match.group(1), review_match.group(2)))
+                  continue
+              followup_match = followup_pattern.fullmatch(body)
+              if followup_match is None:
+                  continue
+              part = int(followup_match.group(1))
+              total = int(followup_match.group(2))
+              marker_sha = followup_match.group(3)
+              if followup_total not in (None, total) or followup_marker_sha not in (None, marker_sha):
+                  raise SystemExit("follow-up payload metadata is inconsistent")
+              followup_total = total
+              followup_marker_sha = marker_sha
+              followup_parts[part] = followup_match.group(4)
+
+          expected_review_sha = os.environ["REVIEW_SHA256"]
+          matching_reviews = [value for marker, value in review_payloads if marker == expected_review_sha]
+          if len(matching_reviews) != 1:
+              raise SystemExit(f"expected exactly one review payload, found {len(matching_reviews)}")
+          review_patch = gzip.decompress(base64.b64decode(matching_reviews[0], validate=True))
+          if hashlib.sha256(review_patch).hexdigest() != expected_review_sha:
+              raise SystemExit("review patch checksum mismatch")
+
+          expected_followup_sha = os.environ["FOLLOWUP_SHA256"]
+          if followup_total != 2 or sorted(followup_parts) != [1, 2]:
+              raise SystemExit(f"expected two follow-up parts, received {sorted(followup_parts)}")
+          if followup_marker_sha != expected_followup_sha:
+              raise SystemExit("follow-up marker checksum mismatch")
+          encoded_followup = "".join(followup_parts[index] for index in (1, 2))
+          followup_patch = gzip.decompress(base64.b64decode(encoded_followup, validate=True))
+          if hashlib.sha256(followup_patch).hexdigest() != expected_followup_sha:
+              raise SystemExit("follow-up patch checksum mismatch")
+
+          Path("/tmp/p1a-review.patch").write_bytes(review_patch)
+          Path("/tmp/p1a-followup.patch").write_bytes(followup_patch)
+          print(f"review_patch_bytes={len(review_patch)} sha256={expected_review_sha}")
+          print(f"followup_patch_bytes={len(followup_patch)} sha256={expected_followup_sha}")
+          PY
+
+      - name: Build verified P1A commit on staging ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          current_head="$(git rev-parse "origin/$TARGET_BRANCH")"
+          test "$current_head" = "$EXPECTED_HEAD"
+          git checkout --detach "$EXPECTED_HEAD"
+          git apply --whitespace=nowarn /tmp/p1a-review.patch
+          git apply --whitespace=nowarn /tmp/p1a-followup.patch
+          git diff --check
+
+          cat > /tmp/expected-files.txt <<'EOF'
+          README.md
+          app/api/rooms.py
+          app/douyin/live_page.py
+          app/main.py
+          app/media/ffmpeg.py
+          app/rooms/models.py
+          app/rooms/repository.py
+          app/security.py
+          docs/P1A_IMPLEMENTATION_PLAN.md
+          tests/integration/test_app.py
+          tests/integration/test_room_api.py
+          tests/unit/test_ffmpeg_supervisor.py
+          tests/unit/test_live_page.py
+          tests/unit/test_rooms.py
+          tools/verify_repository_baseline.py
+          tools/verify_source.py
+          EOF
+          git diff --name-only | LC_ALL=C sort > /tmp/actual-files.txt
+          diff -u /tmp/expected-files.txt /tmp/actual-files.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          tree_sha="$(git write-tree)"
+          test "$tree_sha" = "$EXPECTED_TREE"
+          git commit -m "完成 P1A 安全边界与媒体基础审查修复"
+          final_sha="$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          git push origin "$final_sha:refs/heads/$STAGING_BRANCH"
+          printf 'final_sha=%s\n' "$final_sha" | tee "$RUNNER_TEMP/p1a-final-sha.txt"
+
+      - name: Remove temporary refs after promotion
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          final_sha="$(cut -d= -f2 "$RUNNER_TEMP/p1a-final-sha.txt")"
+          for _ in $(seq 1 150); do
+            target_sha="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+            if [[ "$target_sha" == "$final_sha" ]]; then
+              git push origin --delete "$STAGING_BRANCH" "$TRANSFER_BRANCH"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "promotion was not observed before cleanup timeout" >&2
+          exit 1
+
+      - name: Upload transfer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1a-review-transfer-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/p1a-final-sha.txt
+          if-no-files-found: warn
+          retention-days: 3
