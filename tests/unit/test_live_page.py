@@ -49,12 +49,28 @@ def test_live_page_fixture_extracts_private_candidates_but_public_result_is_reda
         ("hls", "origin"),
     }
     assert any("SECRET-FLV" in item.url for item in result.candidates)
+    assert all("attacker.invalid" not in item.url for item in result.candidates)
+    assert all("127.0.0.1" not in item.url for item in result.candidates)
+    assert all("localhost" not in item.url for item in result.candidates)
 
     public = result.snapshot.to_public_dict()
     rendered = str(public)
-    assert "SECRET-FLV" not in rendered
-    assert "SECRET-HLS" not in rendered
-    assert "PRIVATE" not in rendered
+    private_values = (
+        "SECRET-FLV",
+        "SECRET-HLS",
+        "SECRET-HD",
+        "PATH-TOKEN-PRIVATE",
+        "PRIVATE-IP",
+        "PRIVATE-LOCALHOST",
+        "PRIVATE-LOCAL",
+        "THIRD-PARTY",
+        "PUBLIC-IP-LITERAL",
+        "PRIVATE-WSS",
+    )
+    assert all(value not in rendered for value in private_values)
+    assert all(value not in repr(result) for value in private_values)
+    assert all(value not in repr(result.snapshot) for value in private_values)
+    assert all(value not in repr(result.candidates[0]) for value in private_values)
     assert public["stream_candidate_count"] == 3
     assert public["sanitized_websocket_endpoints"] == (
         "wss://webcast5-ws-web-lf.douyin.com/webcast/im/push/v2/",
@@ -65,6 +81,12 @@ def test_live_page_fixture_extracts_private_candidates_but_public_result_is_reda
     assert all("path" not in item for item in candidates)
     assert {item["path_suffix"] for item in candidates} == {".flv", ".m3u8"}
     assert all(len(item["path_sha256"]) == 64 for item in candidates)
+    assert all(len(item["url_sha256"]) == 64 for item in candidates)
+    assert {tuple(item["query_keys"]) for item in candidates} == {
+        ("expire", "signature"),
+        ("session", "token"),
+        ("sign",),
+    }
 
 
 def test_live_page_rejects_private_or_unknown_stream_hosts() -> None:
@@ -171,10 +193,74 @@ def test_live_page_client_rejects_redirect_credentials_or_custom_port() -> None:
                 return httpx.Response(302, headers={"location": target})
 
             transport = httpx.MockTransport(handler)
-            async with httpx.AsyncClient(transport=transport, follow_redirects=False) as client:
+            async with httpsyncClient(transport=transport, follow_redirects=False) as client:
                 live_client = DouyinLivePageClient(client=client)
                 result = await live_client.check("73504089679")
                 assert result.snapshot.live_state == "error"
                 assert result.snapshot.error_code == "LivePageError"
+
+    asyncio.run(scenario())
+
+
+def test_live_page_client_enforces_redirect_limit() -> None:
+    import asyncio
+
+    import httpx
+
+    from app.douyin.live_page import MAX_REDIRECTS, DouyinLivePageClient
+
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        step = len(requested)
+        return httpx.Response(302, headers={"location": f"/redirect-{step}"})
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await DouyinLivePageClient(client=client).check("73504089679")
+            assert result.snapshot.live_state == "error"
+            assert result.snapshot.error_code == "LivePageError"
+            assert len(requested) == MAX_REDIRECTS + 1
+
+    asyncio.run(scenario())
+
+
+def test_live_page_distinguishes_blocked_unknown_and_network_error() -> None:
+    import asyncio
+
+    import httpx
+
+    from app.douyin.live_page import DouyinLivePageClient
+
+    blocked = inspect_live_page(
+        "请完成下列隬见后继访闭".encode(),
+        room_url="73504089679",
+        http_status=200,
+        final_url="https://live.douyin.com/73504089679",
+    )
+    assert blocked.snapshot.live_state == "blocked"
+    assert blocked.candidates == ()
+
+    unknown = inspect_live_page(
+        b"<html><body>ordinary page without structured live data</body></html>",
+        room_url="73504089679",
+        http_status=200,
+        final_url="https://live.douyin.com/73504089679",
+    )
+    assert unknown.snapshot.live_state == "unknown"
+    assert unknown.snapshot.error_code is None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("synthetic network failure", request=request)
+
+    async def scenario() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            failed = await DouyinLivePageClient(client=client).check("73504089679")
+            assert failed.snapshot.live_state == "error"
+            assert failed.snapshot.error_code == "ConnectError"
+            assert failed.candidates == ()
 
     asyncio.run(scenario())

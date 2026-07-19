@@ -6,7 +6,7 @@ import ipaddress
 import json
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urljoin, urlsplit, urlunsplit
@@ -128,7 +128,7 @@ class NormalizedRoomReference:
 class StreamCandidate:
     protocol: str
     quality: str
-    url: str
+    url: str = field(repr=False)
     source_path: str
 
     @property
@@ -171,21 +171,41 @@ class LiveSnapshot:
     blocked_markers: tuple[str, ...]
     marker_counts: dict[str, int]
     sanitized_websocket_endpoints: tuple[str, ...]
-    stream_candidates: tuple[StreamCandidate, ...]
+    stream_candidates: tuple[StreamCandidate, ...] = field(repr=False)
     notes: tuple[str, ...]
     error_code: str | None = None
 
     def to_public_dict(self) -> dict[str, object]:
-        result = asdict(self)
-        result["stream_candidates"] = [item.to_public_dict() for item in self.stream_candidates]
-        result["stream_candidate_count"] = len(self.stream_candidates)
-        return result
+        # Keep this mapping explicit. ``dataclasses.asdict`` would recursively copy the
+        # private candidate URL before the value is replaced, making future refactors
+        # unnecessarily prone to exposing signed input URLs.
+        return {
+            "room_url": self.room_url,
+            "checked_at_ms": self.checked_at_ms,
+            "live_state": self.live_state,
+            "http_status": self.http_status,
+            "final_host": self.final_host,
+            "final_path": self.final_path,
+            "external_room_id": self.external_room_id,
+            "web_rid": self.web_rid,
+            "title": self.title,
+            "body_sha256": self.body_sha256,
+            "body_bytes_read": self.body_bytes_read,
+            "body_truncated": self.body_truncated,
+            "blocked_markers": self.blocked_markers,
+            "marker_counts": self.marker_counts,
+            "sanitized_websocket_endpoints": self.sanitized_websocket_endpoints,
+            "stream_candidates": [item.to_public_dict() for item in self.stream_candidates],
+            "stream_candidate_count": len(self.stream_candidates),
+            "notes": self.notes,
+            "error_code": self.error_code,
+        }
 
 
 @dataclass(frozen=True, slots=True)
 class LivePageResult:
     snapshot: LiveSnapshot
-    candidates: tuple[StreamCandidate, ...]
+    candidates: tuple[StreamCandidate, ...] = field(repr=False)
 
 
 def normalize_room_reference(value: str) -> NormalizedRoomReference:
