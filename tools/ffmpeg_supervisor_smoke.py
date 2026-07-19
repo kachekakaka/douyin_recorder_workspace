@@ -54,11 +54,11 @@ async def run_smoke(output_dir: Path, *, duration_seconds: float = 3.0) -> dict[
         "-map",
         "1:a:0",
         "-c:v",
-        "mpeg4",
-        "-q:v",
-        "5",
+        "ffv1",
+        "-level",
+        "3",
         "-c:a",
-        "aac",
+        "pcm_s16le",
         "-f",
         "segment",
         "-segment_time",
@@ -85,7 +85,13 @@ async def run_smoke(output_dir: Path, *, duration_seconds: float = 3.0) -> dict[
     segments = parse_segment_csv(segment_list)
     files = sorted(path.name for path in media_dir.glob("*.mkv"))
     if result.returncode != 0 or not files:
-        raise RuntimeError(f"FFmpeg smoke 失败，退出码 {result.returncode}")
+        tail = ""
+        if log_path.exists():
+            rows = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            tail = "\n".join(rows[-20:])
+        raise RuntimeError(
+            f"FFmpeg smoke 失败，退出码 {result.returncode}; 日志尾部:\n{tail}"
+        )
     return {
         "ok": True,
         "output_dir": str(output_dir),
