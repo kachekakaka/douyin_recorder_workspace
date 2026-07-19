@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> 当前分支已完成 **P1A：单房间管理、直播流候选解析与 FFmpeg Supervisor 基础** 的工程实现，正在通过 PR 审查；完整自动录制与真实 recipient 接线尚未完成。
+> 当前分支已完成 **P1A：单房间管理、直播流候选解析与 FFmpeg Supervisor 基础** 的工程实现，正在进行最终 PR 审查；完整自动录制、长期轮询与真实 recipient 接线尚未完成。
 
 ## 不可改变的业务口径
 
@@ -20,7 +20,7 @@ WebcastGroupLiveGiftRecipientRecommendMessage
 live_verified=false
 ```
 
-授权账号 `73504089679` 的无登录 headless 预检成功访问公开页面，但没有观察到 IM WebSocket；这不等于该账号永久不支持目标消息。
+授权房间 `79907888978`、`94771623313`、`40727638291` 的无登录 headless 预检均成功访问公开页面，并在浏览器网络层观察到 allowlist `douyincdn.com` FLV 媒体响应；仍没有观察到 IM WebSocket 或目标推荐收礼人消息。一次未观察到不能证明永久不支持。
 
 ## 已实现
 
@@ -39,16 +39,18 @@ live_verified=false
 
 ### P1A 当前批次
 
-- `GET/POST/PATCH /api/rooms`；
+- `GET/POST/PATCH /api/rooms` 和 `GET /api/rooms/{room_key}`；
 - enable/disable/check actions；
 - 抖音号与 `https://live.douyin.com/<id>` 严格规范化；
 - 受限重定向和 SSRF 边界；
 - 公开直播页 JSON/字符串化 JSON 解析；
+- 应用内 `DouyinStreamResolver`：静态页面优先，缺少候选时执行一次性、受控 Chrome/CDP 网络回退；
+- 私密候选使用最多 32 个房间、120 秒 TTL 的进程内缓存；URL 修改、disable、关闭或过期时清除；
 - FLV/HLS/画质流候选只保留在进程内存；
 - API/SQLite/日志只返回 host、媒体后缀、path/url hash 和 query key，不返回原始流路径；
 - FFmpeg argv、progress、segment CSV 和 RecorderSupervisor 核心；输入层再次执行 CDN allowlist、协议默认端口与安全路径段校验，默认拒绝覆盖已有媒体；
 - 本地 lavfi smoke 工具；
-- SQLite schema v2 `room_checks` 审计；
+- SQLite schema v3：`room_checks` 审计、规范化 `room_url` 唯一索引和检查查询索引；
 - 网页新增直播间、启停和立即检查。
 
 ## 快速开始
@@ -84,6 +86,7 @@ P1A 尚未实现管理员认证，配置会拒绝 `0.0.0.0`、局域网和公网
 ```text
 GET   /api/rooms
 POST  /api/rooms
+GET   /api/rooms/{room_key}
 PATCH /api/rooms/{room_key}
 POST  /api/rooms/{room_key}/actions/check
 POST  /api/rooms/{room_key}/actions/enable
@@ -101,7 +104,7 @@ POST  /api/rooms/{room_key}/actions/disable
 }
 ```
 
-“立即检查”不会在响应中返回完整签名流 URL。
+“立即检查”先执行受限 HTTP 解析；没有候选时才使用一次性 Chrome/CDP 回退。完整签名流 URL 只存在于当前进程内存，API、SQLite、日志和网页仅返回 host、媒体后缀、query key 与 path/url SHA-256。
 
 ## FFmpeg Supervisor 本地 smoke
 
