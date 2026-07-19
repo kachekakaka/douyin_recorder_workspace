@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 
 ARCHIVE_SHA256 = "602d83b2b8305f22ce750082e3ab1fb26369209471fcd7520c1108d4d26cf62a"
 BASE64_LENGTH = 35_200
+ORIGINAL_CI_BLOB = "1600ba1430307307697e6b0eb88fef05af318a54"
 BASE64_BLOBS = (
     "5435f5b0f434fd069ed0adbf1063d554c8ed90de",
     "8c3ee6d40896a1082d8f8ac8a3f13ec0f2bc3086",
@@ -134,9 +135,7 @@ def verify_files() -> None:
 
 
 def restore_final_tree() -> None:
-    ci_bytes = command("git", "show", "HEAD^:.github/workflows/ci.yml")
-    assert isinstance(ci_bytes, bytes)
-    Path(".github/workflows/ci.yml").write_bytes(ci_bytes)
+    Path(".github/workflows/ci.yml").write_bytes(download_blob(ORIGINAL_CI_BLOB))
     Path(".github/workflows/p1a-resolver-assemble-once.yml").unlink()
     Path(__file__).unlink()
 
