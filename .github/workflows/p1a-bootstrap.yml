@@ -88,14 +88,22 @@ jobs:
 
           if expected_total != 4 or sorted(parts) != [1, 2, 3, 4]:
               raise SystemExit(f"expected four payload parts, received {sorted(parts)}")
+          for index in range(1, 5):
+              value = parts[index]
+              print(
+                  f"part {index}: length={len(value)} "
+                  f"sha256={hashlib.sha256(value.encode()).hexdigest()} "
+                  f"prefix={value[:16]} suffix={value[-16:]}"
+              )
           if marker_sha256 != "d7fed6eb56e42972acddecb9df76a6cca964ae2b760e68464d29818e0d7fe673":
               raise SystemExit(f"unexpected payload marker checksum: {marker_sha256}")
           raw = base64.b64decode("".join(parts[index] for index in range(1, 5)), validate=True)
           actual_sha256 = hashlib.sha256(raw).hexdigest()
-          uploaded_sha256 = "d20fe71c2036933c4030f586834354ee4c570e6a7205398dc5bd358f2bf3b4a4"
-          if actual_sha256 != uploaded_sha256:
+          expected_uploaded_sha256 = "d7fed6eb56e42972acddecb9df76a6cca964ae2b760e68464d29818e0d7fe673"
+          if actual_sha256 != expected_uploaded_sha256:
               raise SystemExit(
-                  f"uploaded payload checksum mismatch: {actual_sha256} != {uploaded_sha256}"
+                  f"uploaded payload checksum mismatch: {actual_sha256} != "
+                  f"{expected_uploaded_sha256}"
               )
 
           root = Path.cwd().resolve()
@@ -124,8 +132,7 @@ jobs:
                   target.write_bytes(source.read())
 
           print(f"Applied {sum(1 for item in members if item.isfile())} files")
-          print(f"Uploaded payload SHA-256: {actual_sha256}")
-          print(f"Original local bundle marker: {marker_sha256}")
+          print(f"Payload SHA-256: {actual_sha256}")
           PY
 
           git diff --check 2>&1 | tee -a "$RUNNER_TEMP/p1a-bootstrap.log"
