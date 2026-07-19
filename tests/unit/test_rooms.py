@@ -45,7 +45,39 @@ def test_room_repository_crud_and_check_audit(tmp_path: Path) -> None:
         rooms = await repository.list_rooms()
         assert len(rooms) == 1
         assert rooms[0].latest_check == check
-        assert await database.schema_version() == 2
+        assert await database.schema_version() == 3
+        await database.close()
+
+    asyncio.run(scenario())
+
+
+def test_room_check_audit_rejects_secret_bearing_fields(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        database = Database(tmp_path / "userdata" / "douyin_recorder.db")
+        await database.initialize()
+        repository = RoomRepository(database)
+        await repository.create_room(RoomCreate(room_key="group-a", room_url="73504089679"))
+
+        with pytest.raises(ValueError, match="禁止持久化"):
+            await repository.record_check(
+                "group-a",
+                {
+                    "live_state": "live",
+                    "stream_candidates": [
+                        {"url": "https://pull.example.invalid/live.flv?signature=SECRET"}
+                    ],
+                },
+            )
+        with pytest.raises(ValueError, match="query"):
+            await repository.record_check(
+                "group-a",
+                {
+                    "live_state": "live",
+                    "room_url": "https://live.douyin.com/73504089679?signature=SECRET",
+                },
+            )
+        rows = await database.fetch_all("SELECT detail_json FROM room_checks")
+        assert rows == []
         await database.close()
 
     asyncio.run(scenario())

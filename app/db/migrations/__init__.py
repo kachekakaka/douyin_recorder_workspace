@@ -216,4 +216,14 @@ CREATE INDEX IF NOT EXISTS ix_room_checks_room_time
     ON room_checks(room_key, checked_at_ms DESC);
 """,
     ),
+    Migration(
+        3,
+        "p1a_room_url_uniqueness",
+        r"""
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rooms_room_url
+    ON rooms(room_url);
+CREATE INDEX IF NOT EXISTS ix_room_checks_room_id
+    ON room_checks(room_key, id DESC);
+""",
+    ),
 )

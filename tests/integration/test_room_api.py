@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -68,6 +69,29 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
         assert rejected_cross_origin.status_code == 403
         assert rejected_cross_origin.json()["code"] == "cross_origin_write"
 
+        rejected_cross_site_fetch = client.post(
+            "/api/rooms",
+            headers={"Sec-Fetch-Site": "cross-site"},
+            json={"room_key": "blocked", "room_url": "73504089679"},
+        )
+        assert rejected_cross_site_fetch.status_code == 403
+        assert rejected_cross_site_fetch.json()["code"] == "cross_origin_write"
+
+        rejected_referer = client.post(
+            "/api/rooms",
+            headers={"Referer": "https://evil.example/page"},
+            json={"room_key": "blocked", "room_url": "73504089679"},
+        )
+        assert rejected_referer.status_code == 403
+
+        rejected_wrong_local_host = client.post(
+            "/api/rooms",
+            headers={"Host": "localhost:3399"},
+            json={"room_key": "blocked", "room_url": "73504089679"},
+        )
+        assert rejected_wrong_local_host.status_code == 400
+        assert rejected_wrong_local_host.json()["code"] == "invalid_host"
+
         created = client.post(
             "/api/rooms",
             headers={"Origin": "http://127.0.0.1:3399"},
@@ -75,6 +99,17 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
         )
         assert created.status_code == 201
         assert created.json()["data"]["room_url"] == "https://live.douyin.com/73504089679"
+
+        fetched = client.get("/api/rooms/group-a")
+        assert fetched.status_code == 200
+        assert fetched.json()["data"]["room_key"] == "group-a"
+        assert isinstance(fetched.json()["data"]["created_at_ms"], int)
+
+        missing = client.get("/api/rooms/missing-room")
+        assert missing.status_code == 404
+
+        invalid_key = client.get("/api/rooms/INVALID")
+        assert invalid_key.status_code == 422
 
         duplicate = client.post(
             "/api/rooms",
@@ -106,6 +141,21 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
         )
         assert rejected_null.status_code == 422
 
+        empty_patch = client.patch("/api/rooms/group-a", json={})
+        assert empty_patch.status_code == 422
+
+        unknown_patch = client.patch(
+            "/api/rooms/group-a",
+            json={"unknown": "value"},
+        )
+        assert unknown_patch.status_code == 422
+
+        invalid_enum = client.patch(
+            "/api/rooms/group-a",
+            json={"protocol": "dash"},
+        )
+        assert invalid_enum.status_code == 422
+
         updated = client.patch(
             "/api/rooms/group-a",
             json={"quality": "hd", "protocol": "hls"},
@@ -118,6 +168,8 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
         report = checked.json()["data"]
         assert report["live_state"] == "live"
         assert report["stream_candidate_count"] == 3
+        assert isinstance(report["external_room_id"], str)
+        assert isinstance(report["web_rid"], str)
         rendered = json.dumps(report)
         assert "SECRET" not in rendered
         assert "PRIVATE" not in rendered
@@ -127,9 +179,27 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
         item = listing.json()["data"]["items"][0]
         assert item["latest_check"]["stream_candidate_count"] == 3
 
+        disabled = client.post("/api/rooms/group-a/actions/disable")
+        assert disabled.status_code == 200
+        assert disabled.json()["data"]["enabled"] is False
+        assert disabled.json()["data"]["latest_check"]["stream_candidate_count"] == 3
+
+        enabled = client.post("/api/rooms/group-a/actions/enable")
+        assert enabled.status_code == 200
+        assert enabled.json()["data"]["enabled"] is True
+        assert enabled.json()["data"]["latest_check"]["stream_candidate_count"] == 3
+
         status = client.get("/api/status")
         assert status.status_code == 200
         assert status.json()["data"]["phase"] == "P1A"
-        assert status.json()["data"]["schema_version"] == 2
+        assert status.json()["data"]["schema_version"] == 3
+
+    with sqlite3.connect(state.settings.paths.database_path) as connection:
+        detail_json = connection.execute(
+            "SELECT detail_json FROM room_checks ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        assert "SECRET" not in detail_json
+        assert "PRIVATE" not in detail_json
+        assert "signature=" not in detail_json.casefold()
 
     assert fake_client.closed is True

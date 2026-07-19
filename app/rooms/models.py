@@ -7,7 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.douyin.live_page import LivePageError, normalize_room_reference
 
-_ROOM_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+ROOM_KEY_PATTERN = r"^[a-z0-9][a-z0-9_-]{1,63}$"
+_ROOM_KEY_RE = re.compile(ROOM_KEY_PATTERN)
 Quality = Literal["origin", "uhd", "hd", "sd", "ld", "md"]
 Protocol = Literal["flv", "hls"]
 

@@ -24,6 +24,9 @@ class RoomService:
     async def list_rooms(self) -> list[RoomRecord]:
         return await self.repository.list_rooms()
 
+    async def get_room(self, room_key: str) -> RoomRecord:
+        return await self.repository.get_room(room_key)
+
     async def create_room(self, payload: RoomCreate) -> RoomRecord:
         return await self.repository.create_room(payload)
 

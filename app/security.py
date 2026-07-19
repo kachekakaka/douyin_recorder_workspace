@@ -106,23 +106,38 @@ def _same_origin(
     return parsed.scheme == request_scheme and origin_port == effective_request_port
 
 
-def validate_request_boundary(request: Request) -> RequestBoundaryViolation | None:
+def validate_request_boundary(
+    request: Request,
+    *,
+    configured_host: str,
+    configured_port: int,
+) -> RequestBoundaryViolation | None:
     """Protect the unauthenticated loopback-only P1A API from DNS rebinding and CSRF."""
 
     host_values = request.headers.getlist("host")
     host_parts = _host_and_port(host_values[0]) if len(host_values) == 1 else None
-    if host_parts is None or not _is_loopback_host(host_parts[0]):
+    expected_host = configured_host.strip().strip("[]").casefold().rstrip(".")
+    request_scheme = request.url.scheme.casefold()
+    if host_parts is None:
+        effective_port = None
+    else:
+        effective_port = host_parts[1] or _DEFAULT_PORTS.get(request_scheme)
+    if (
+        host_parts is None
+        or not _is_loopback_host(host_parts[0])
+        or host_parts[0] != expected_host
+        or effective_port != configured_port
+    ):
         return RequestBoundaryViolation(
             status_code=400,
             code="invalid_host",
-            message="P1A 只接受 localhost 或回环 IP 的 Host 请求头",
+            message="Host 必须与当前配置的回环监听地址和端口完全一致",
         )
 
     if request.method.upper() not in _STATE_CHANGING_METHODS:
         return None
 
     request_host, request_port = host_parts
-    request_scheme = request.url.scheme.casefold()
     origin_values = request.headers.getlist("origin")
     if len(origin_values) > 1:
         return RequestBoundaryViolation(

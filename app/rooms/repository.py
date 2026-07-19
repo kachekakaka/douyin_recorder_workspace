@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiosqlite
 
@@ -29,6 +30,40 @@ _ROOM_COLUMNS = (
     "created_at_ms",
     "updated_at_ms",
 )
+
+_FORBIDDEN_CHECK_KEYS = {
+    "authorization",
+    "cookie",
+    "headers",
+    "hls_url",
+    "input_url",
+    "path",
+    "raw_path",
+    "stream_url",
+    "url",
+}
+
+
+def _validate_public_check_snapshot(value: object, *, location: str = "snapshot") -> None:
+    """Reject common secret-bearing fields before serializing room check detail JSON."""
+
+    if isinstance(value, dict):
+        for raw_key, child in value.items():
+            key = str(raw_key).casefold()
+            if key in _FORBIDDEN_CHECK_KEYS:
+                raise ValueError(f"{location} 包含禁止持久化的字段: {raw_key}")
+            _validate_public_check_snapshot(child, location=f"{location}.{raw_key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _validate_public_check_snapshot(child, location=f"{location}[{index}]")
+        return
+    if not isinstance(value, str):
+        return
+    if value.casefold().startswith(("http://", "https://")):
+        parsed = urlsplit(value)
+        if parsed.query or parsed.fragment:
+            raise ValueError(f"{location} 不得持久化带 query 或 fragment 的 URL")
 
 
 class RoomRepository:
@@ -140,13 +175,17 @@ class RoomRepository:
                 (*values, room_key),
             )
 
-        await self.database.write(operation)
+        try:
+            await self.database.write(operation)
+        except sqlite3.IntegrityError as exc:
+            raise RoomAlreadyExistsError(room_key) from exc
         return await self.get_room(room_key)
 
     async def set_enabled(self, room_key: str, enabled: bool) -> RoomRecord:
         return await self.update_room(room_key, RoomPatch(enabled=enabled))
 
     async def record_check(self, room_key: str, snapshot: dict[str, object]) -> dict[str, object]:
+        _validate_public_check_snapshot(snapshot)
         checked_at_ms = int(snapshot.get("checked_at_ms") or int(time.time() * 1000))
         detail_json = json.dumps(
             snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")

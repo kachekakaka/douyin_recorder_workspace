@@ -55,6 +55,20 @@ def test_fastapi_health_readiness_status_and_static_page(
         assert invalid_userinfo_host.status_code == 400
         assert invalid_userinfo_host.json()["code"] == "invalid_host"
 
+        wrong_loopback_alias = client.get(
+            "/healthz",
+            headers={"Host": "localhost:3399"},
+        )
+        assert wrong_loopback_alias.status_code == 400
+        assert wrong_loopback_alias.json()["code"] == "invalid_host"
+
+        wrong_loopback_port = client.get(
+            "/healthz",
+            headers={"Host": "127.0.0.1:3400"},
+        )
+        assert wrong_loopback_port.status_code == 400
+        assert wrong_loopback_port.json()["code"] == "invalid_host"
+
         duplicate_host = client.get(
             "/healthz",
             headers=[("Host", "127.0.0.1:3399"), ("Host", "evil.example")],
@@ -64,7 +78,7 @@ def test_fastapi_health_readiness_status_and_static_page(
 
         ready = client.get("/readyz")
         assert ready.status_code == 200
-        assert ready.json()["data"]["schema_version"] == 2
+        assert ready.json()["data"]["schema_version"] == 3
         assert ready.json()["data"]["ffmpeg"]["ready"] is True
 
         status = client.get("/api/status")

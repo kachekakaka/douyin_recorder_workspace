@@ -85,7 +85,35 @@ class Database:
                         f"迁移 {migration.version} 与数据库记录不一致，拒绝静默继续"
                     )
                 continue
+            await self._validate_migration_preconditions(connection, migration)
             await self._apply_one_migration(connection, migration)
+
+    async def _validate_migration_preconditions(
+        self,
+        connection: aiosqlite.Connection,
+        migration: Migration,
+    ) -> None:
+        if migration.version != 3:
+            return
+        cursor = await connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT room_url
+                FROM rooms
+                GROUP BY room_url
+                HAVING COUNT(*) > 1
+            )
+            """
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        duplicate_groups = int(row[0]) if row else 0
+        if duplicate_groups:
+            raise MigrationError(
+                "迁移 3 无法创建规范化 room_url 唯一索引："
+                f"检测到 {duplicate_groups} 组重复数据，请先人工去重"
+            )
 
     async def _apply_one_migration(
         self, connection: aiosqlite.Connection, migration: Migration

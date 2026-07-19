@@ -40,7 +40,11 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
 
     @app.middleware("http")
     async def security_boundary_and_headers(request: Request, call_next):
-        violation = validate_request_boundary(request)
+        violation = validate_request_boundary(
+            request,
+            configured_host=app_state.settings.host,
+            configured_port=app_state.settings.port,
+        )
         if violation is None:
             response = await call_next(request)
         else:
