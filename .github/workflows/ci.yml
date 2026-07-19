@@ -56,7 +56,10 @@ jobs:
         run: python -m compileall -q app tests tools
 
       - name: Ruff
-        run: python -m ruff check --no-cache app tests tools
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m ruff check --no-cache app tests tools 2>&1 | tee ruff.log
 
       - name: Pytest
         shell: bash
@@ -97,6 +100,7 @@ jobs:
           path: |
             verify-baseline.log
             verify-source.log
+            ruff.log
             pytest.log
           if-no-files-found: ignore
           retention-days: 7
@@ -143,4 +147,16 @@ jobs:
           cache-dependency-path: requirements/dev.lock
       - name: Run the exact Windows verification entrypoint
         shell: cmd
-        run: verify.bat
+        run: |
+          call verify.bat > verify-windows.log 2>&1
+          set "VERIFY_RC=%ERRORLEVEL%"
+          type verify-windows.log
+          exit /b %VERIFY_RC%
+      - name: Upload Windows verification log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-verify-${{ github.run_attempt }}
+          path: verify-windows.log
+          if-no-files-found: ignore
+          retention-days: 7
