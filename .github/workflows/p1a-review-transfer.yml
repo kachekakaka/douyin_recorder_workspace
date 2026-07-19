@@ -5,6 +5,11 @@ on:
   push:
     branches:
       - agent/p1a-review-transfer-20260719-0439
+  pull_request:
+    branches:
+      - feature/p1a-single-room-media-foundation
+    paths:
+      - .github/workflows/p1a-review-transfer.yml
 
 permissions:
   contents: write
