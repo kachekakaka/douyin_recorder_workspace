@@ -38,36 +38,51 @@ jobs:
           cache: pip
           cache-dependency-path: requirements/dev.lock
 
-      - name: Materialize reviewed transaction core and restore normal CI
+      - name: Verify exact staging state
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git log -3 --oneline
+          test "$(git rev-parse HEAD^)" = "bfc1d58cb5a250d533ea1ca4e059d37cc5e07a8a"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'changed=%s\n' "$changed"
+          test "$changed" = ".github/workflows/ci.yml"
+          test -f .github/workflows/p1b-recipient-core-publish-once.yml
+
+      - name: Download and verify reviewed payload
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "fbd9e1bf83fc0958716172ec6f5f81b87a6988db"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/ci.yml"
-          test -f .github/workflows/p1b-recipient-core-publish-once.yml
-          test ! -e app/sessions/repository.py
-
+          set -euxo pipefail
           payload="$RUNNER_TEMP/p1b-recipient-core.tar.gz"
           gh api "repos/$GITHUB_REPOSITORY/git/blobs/a78ed97b0d4ab674feff47071732ed657d48ccde" \
             --jq .content | tr -d '\n' | base64 --decode > "$payload"
+          sha256sum "$payload"
           echo "7586cd1ebec8171ef60ebcac183e292db30a0de26b8b32260e378578c7399977  $payload" \
             | sha256sum -c -
-          test "$(tar -tzf "$payload" | sort)" = "$(printf '%s\n' \
-            app/sessions/__init__.py \
-            app/sessions/models.py \
-            app/sessions/repository.py \
-            app/sessions/service.py \
-            tests/unit/test_recipient_session_repository.py | sort)"
-          tar -xzf "$payload"
+          tar -tzf "$payload"
 
-          while read -r path expected; do
+      - name: Extract and verify recipient transaction files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          payload="$RUNNER_TEMP/p1b-recipient-core.tar.gz"
+          mapfile -t members < <(tar -tzf "$payload" | sort)
+          expected=(
+            app/sessions/__init__.py
+            app/sessions/models.py
+            app/sessions/repository.py
+            app/sessions/service.py
+            tests/unit/test_recipient_session_repository.py
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${members[*]}" = "${expected_sorted[*]}"
+          tar -xzf "$payload"
+          while read -r path expected_sha; do
             actual="$(git hash-object "$path")"
-            test "$actual" = "$expected" || {
-              echo "blob mismatch: $path expected=$expected actual=$actual" >&2
-              exit 1
-            }
+            printf '%s %s\n' "$path" "$actual"
+            test "$actual" = "$expected_sha"
           done <<'EOF'
           app/sessions/__init__.py 247127918b993cbdf0b6eef4dd0b404c30f6b1d7
           app/sessions/models.py 577a8c1a81ddd4dc49f645968a69d7c179e8118d
@@ -76,8 +91,11 @@ jobs:
           tests/unit/test_recipient_session_repository.py 8136f570b514cb8e4c266c3f19df6ada7d20177f
           EOF
 
-          gh api "repos/$GITHUB_REPOSITORY/git/blobs/1600ba1430307307697e6b0eb88fef05af318a54" \
-            --jq .content | tr -d '\n' | base64 --decode > .github/workflows/ci.yml
+      - name: Restore final repository tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git show HEAD^^:.github/workflows/ci.yml > .github/workflows/ci.yml
           rm .github/workflows/p1b-recipient-core-publish-once.yml
           python - <<'PY'
           import json
@@ -89,6 +107,7 @@ jobs:
           if contract.get("live_verified") is not False:
               raise SystemExit("live_verified must remain false")
           PY
+          git diff --name-only
           git diff --check
 
       - name: Install locked dependencies
@@ -122,7 +141,7 @@ jobs:
       - name: Commit and push verified transaction core
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           git fetch origin feature/p1b-single-room-recipient-foundation
           test "$(git rev-parse origin/feature/p1b-single-room-recipient-foundation)" = "$GITHUB_SHA"
           git config user.name "github-actions[bot]"
@@ -135,6 +154,7 @@ jobs:
             app/sessions/repository.py \
             app/sessions/service.py \
             tests/unit/test_recipient_session_repository.py
+          git diff --cached --name-only
           test "$(git diff --cached --name-only | wc -l)" -eq 7
           git diff --cached --check
           git commit -m "feat: persist recipient events and strict timeline transactions"
