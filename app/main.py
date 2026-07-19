@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.api import rooms_router
 from app.paths import ROOT
+from app.security import validate_request_boundary
 from app.settings import Settings
 from app.state import AppState
 
@@ -38,8 +39,15 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
     app.include_router(rooms_router)
 
     @app.middleware("http")
-    async def security_headers(request: Request, call_next):
-        response = await call_next(request)
+    async def security_boundary_and_headers(request: Request, call_next):
+        violation = validate_request_boundary(request)
+        if violation is None:
+            response = await call_next(request)
+        else:
+            response = JSONResponse(
+                {"ok": False, "error": violation.message, "code": violation.code},
+                status_code=violation.status_code,
+            )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "same-origin"

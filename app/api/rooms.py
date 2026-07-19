@@ -33,7 +33,7 @@ async def create_room(payload: RoomCreate, request: Request) -> dict[str, object
     try:
         room = await _service(request).create_room(payload)
     except RoomAlreadyExistsError as exc:
-        raise HTTPException(status_code=409, detail="room_key 已存在") from exc
+        raise HTTPException(status_code=409, detail="room_key 或 room_url 已存在") from exc
     return {"ok": True, "data": room.model_dump(mode="json")}
 
 
@@ -43,6 +43,8 @@ async def update_room(room_key: str, payload: RoomPatch, request: Request) -> di
         room = await _service(request).update_room(room_key, payload)
     except RoomNotFoundError as exc:
         raise HTTPException(status_code=404, detail="直播间不存在") from exc
+    except RoomAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail="room_url 已由其他 room_key 使用") from exc
     return {"ok": True, "data": room.model_dump(mode="json")}
 
 

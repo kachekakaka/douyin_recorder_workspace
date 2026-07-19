@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> 当前分支进入 **P1A：单房间管理、直播流候选解析与 FFmpeg Supervisor 基础**。完整自动录制与真实 recipient 接线尚未完成。
+> 当前分支已完成 **P1A：单房间管理、直播流候选解析与 FFmpeg Supervisor 基础** 的工程实现，正在通过 PR 审查；完整自动录制与真实 recipient 接线尚未完成。
 
 ## 不可改变的业务口径
 
@@ -45,8 +45,8 @@ live_verified=false
 - 受限重定向和 SSRF 边界；
 - 公开直播页 JSON/字符串化 JSON 解析；
 - FLV/HLS/画质流候选只保留在进程内存；
-- API/SQLite/日志只返回 host、path、query key 和 URL hash；
-- FFmpeg argv、progress、segment CSV 和 RecorderSupervisor 核心；
+- API/SQLite/日志只返回 host、媒体后缀、path/url hash 和 query key，不返回原始流路径；
+- FFmpeg argv、progress、segment CSV 和 RecorderSupervisor 核心；输入层再次执行 CDN allowlist、协议默认端口与安全路径段校验，默认拒绝覆盖已有媒体；
 - 本地 lavfi smoke 工具；
 - SQLite schema v2 `room_checks` 审计；
 - 网页新增直播间、启停和立即检查。
@@ -77,7 +77,7 @@ python -m app
 http://127.0.0.1:3399/
 ```
 
-P1A 尚未实现管理员认证，配置会拒绝 `0.0.0.0`、局域网和公网绑定。
+P1A 尚未实现管理员认证，配置会拒绝 `0.0.0.0`、局域网和公网绑定。HTTP 层同时拒绝非回环 `Host` 和浏览器跨源写操作，降低本地服务被 DNS rebinding/CSRF 操作的风险。
 
 ## 房间 API
 

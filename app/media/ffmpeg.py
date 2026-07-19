@@ -29,6 +29,21 @@ _ALLOWED_EXTRA_INPUT_OPTIONS = {
     "-reconnect_streamed",
     "-reconnect_delay_max",
 }
+_ALLOWED_STREAM_SUFFIXES = (
+    "douyincdn.com",
+    "douyin.com",
+    "bytecdn.cn",
+    "byteimg.com",
+    "amemv.com",
+    "snssdk.com",
+    "zijieapi.com",
+    "bytedance.com",
+)
+_SAFE_HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,80}$")
+_FORBIDDEN_HEADER_NAMES = {"host", "connection", "content-length", "transfer-encoding"}
+_ALLOWED_PROTOCOLS = {"flv", "hls"}
+_ALLOWED_QUALITIES = {"origin", "uhd", "hd", "sd", "ld", "md", "unknown"}
+_MAX_STREAM_URL_CHARS = 16_384
 
 
 class RecorderConfigurationError(ValueError):
@@ -45,10 +60,12 @@ class StreamInput:
     def header_blob(self) -> str:
         rows: list[str] = []
         for name, value in self.headers:
-            if not name or any(char in name for char in "\r\n:"):
+            if not _SAFE_HEADER_NAME_RE.fullmatch(name):
                 raise RecorderConfigurationError(f"请求头名称无效: {name!r}")
-            if "\r" in value or "\n" in value:
-                raise RecorderConfigurationError(f"请求头值包含换行: {name}")
+            if name.casefold() in _FORBIDDEN_HEADER_NAMES:
+                raise RecorderConfigurationError(f"请求头不允许由录制计划覆盖: {name}")
+            if any(ord(char) < 32 or ord(char) == 127 for char in value):
+                raise RecorderConfigurationError(f"请求头值包含控制字符: {name}")
             rows.append(f"{name}: {value}")
         return "\r\n".join(rows) + ("\r\n" if rows else "")
 
@@ -67,24 +84,48 @@ class RecordingPlan:
 
     def __post_init__(self) -> None:
         for label, value in (("room_key", self.room_key), ("session_id", self.session_id)):
-            if not _SAFE_COMPONENT_RE.fullmatch(value):
-                raise RecorderConfigurationError(f"{label} 只能包含字母、数字、点、下划线或横线")
+            if not _SAFE_COMPONENT_RE.fullmatch(value) or value in {".", ".."}:
+                raise RecorderConfigurationError(
+                    f"{label} 只能包含字母、数字、点、下划线或横线，且不得是路径段"
+                )
+        if self.stream.protocol not in _ALLOWED_PROTOCOLS:
+            raise RecorderConfigurationError("流协议只允许 flv/hls")
+        if self.stream.quality not in _ALLOWED_QUALITIES:
+            raise RecorderConfigurationError("流画质不在允许范围")
         if self.container not in {"mkv", "ts"}:
             raise RecorderConfigurationError("P1A 原始容器只允许 mkv/ts")
         if not 10 <= self.segment_seconds <= 86_400:
             raise RecorderConfigurationError("segment_seconds 必须在 10–86400 之间")
-        parsed = urlsplit(self.stream.url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        if len(self.stream.url) > _MAX_STREAM_URL_CHARS:
+            raise RecorderConfigurationError("流 URL 长度超过安全上限")
+        if any(ord(char) < 32 or ord(char) == 127 for char in self.stream.url):
+            raise RecorderConfigurationError("流 URL 包含控制字符")
+        try:
+            parsed = urlsplit(self.stream.url)
+            port = parsed.port
+            host = (parsed.hostname or "").casefold().rstrip(".")
+        except ValueError as exc:
+            raise RecorderConfigurationError("流 URL 格式或端口无效") from exc
+        if parsed.scheme not in {"http", "https"} or not host:
             raise RecorderConfigurationError("录制输入必须是 http(s) 流 URL")
-        if parsed.username or parsed.password:
+        if parsed.username is not None or parsed.password is not None:
             raise RecorderConfigurationError("流 URL 不得包含用户名或密码")
-        host = parsed.hostname.casefold().rstrip(".")
+        expected_port = 80 if parsed.scheme == "http" else 443
+        if port not in (None, expected_port):
+            raise RecorderConfigurationError("流 URL 只允许协议默认端口")
+        if parsed.fragment:
+            raise RecorderConfigurationError("流 URL 不得包含 fragment")
         if host == "localhost" or host.endswith(".local"):
             raise RecorderConfigurationError("流 URL 不得指向本机或 .local 主机")
         try:
             ipaddress.ip_address(host)
         except ValueError:
-            pass
+            if not any(
+                host == suffix or host.endswith(f".{suffix}") for suffix in _ALLOWED_STREAM_SUFFIXES
+            ):
+                raise RecorderConfigurationError(
+                    "流 URL 主机不在允许的抖音/字节 CDN 范围"
+                ) from None
         else:
             raise RecorderConfigurationError("流 URL 不得使用 IP 字面量")
         if len(self.extra_input_args) % 2:
@@ -94,7 +135,11 @@ class RecordingPlan:
         ):
             if option not in _ALLOWED_EXTRA_INPUT_OPTIONS:
                 raise RecorderConfigurationError(f"不允许的 FFmpeg 输入选项: {option}")
-            if not value or value.startswith("-") or any(char in value for char in "\r\n\x00"):
+            if (
+                not value
+                or value.startswith("-")
+                or any(ord(char) < 32 or ord(char) == 127 for char in value)
+            ):
                 raise RecorderConfigurationError(f"FFmpeg 输入选项值无效: {option}")
 
     @property
@@ -123,7 +168,7 @@ class RecordingPlan:
             self.ffmpeg_path,
             "-hide_banner",
             "-nostdin",
-            "-y",
+            "-n",
         ]
         header_blob = self.stream.header_blob()
         if header_blob:
@@ -201,6 +246,7 @@ class RecorderResult:
     stop_stage: str
     last_progress: ProgressSnapshot | None
     stderr_lines: int
+    callback_error_count: int
     redacted_argv: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
@@ -216,9 +262,14 @@ def redact_url(url: str) -> str:
         return "<redacted-url>"
     if not parsed.scheme or not parsed.hostname:
         return "<redacted-url>"
+    raw_path = parsed.path or "/"
+    suffix = Path(raw_path).suffix.casefold()
+    if suffix not in {".flv", ".m3u8"}:
+        suffix = ""
+    safe_path = f"/<redacted-path>{suffix}"
     query_keys = sorted({key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)})
     query = "&".join(f"{key}=<redacted>" for key in query_keys)
-    return urlunsplit((parsed.scheme, parsed.hostname.casefold(), parsed.path or "/", query, ""))
+    return urlunsplit((parsed.scheme, parsed.hostname.casefold(), safe_path, query, ""))
 
 
 def sanitize_log_line(line: str) -> str:
@@ -304,12 +355,17 @@ def parse_segment_csv(path: Path) -> tuple[SegmentEntry, ...]:
     return tuple(rows)
 
 
-async def _maybe_call(callback: ProgressCallback | StderrCallback | None, value: object) -> None:
+async def _maybe_call(callback: ProgressCallback | StderrCallback | None, value: object) -> bool:
     if callback is None:
-        return
-    result = callback(value)  # type: ignore[arg-type]
-    if asyncio.iscoroutine(result):
-        await result
+        return True
+    try:
+        result = callback(value)  # type: ignore[arg-type]
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:
+        # Observability hooks must never stop pipe consumption or deadlock FFmpeg.
+        return False
+    return True
 
 
 class RecorderSupervisor:
@@ -329,6 +385,7 @@ class RecorderSupervisor:
         self.started_at_ms: int | None = None
         self.last_progress: ProgressSnapshot | None = None
         self.stderr_lines = 0
+        self.callback_error_count = 0
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._wait_lock = asyncio.Lock()
@@ -373,6 +430,7 @@ class RecorderSupervisor:
                 stop_stage=self._stop_stage,
                 last_progress=self.last_progress,
                 stderr_lines=self.stderr_lines,
+                callback_error_count=self.callback_error_count,
                 redacted_argv=self.spec.redacted_argv,
             )
 
@@ -382,6 +440,8 @@ class RecorderSupervisor:
         graceful_timeout: float = 10.0,
         terminate_timeout: float = 5.0,
     ) -> RecorderResult:
+        if graceful_timeout <= 0 or terminate_timeout <= 0:
+            raise ValueError("停止超时必须大于 0")
         process = self._require_process()
         if process.returncode is not None:
             return await self.wait()
@@ -427,7 +487,8 @@ class RecorderSupervisor:
             if key.strip() == "progress":
                 snapshot = progress_snapshot(values)
                 self.last_progress = snapshot
-                await _maybe_call(self.on_progress, snapshot)
+                if not await _maybe_call(self.on_progress, snapshot):
+                    self.callback_error_count += 1
                 values = {}
 
     async def _consume_stderr(self) -> None:
@@ -440,7 +501,8 @@ class RecorderSupervisor:
                 self.stderr_lines += 1
                 handle.write(line + "\n")
                 handle.flush()
-                await _maybe_call(self.on_stderr, line)
+                if not await _maybe_call(self.on_stderr, line):
+                    self.callback_error_count += 1
 
     async def _join_readers(self) -> None:
         tasks = [task for task in (self._stdout_task, self._stderr_task) if task is not None]

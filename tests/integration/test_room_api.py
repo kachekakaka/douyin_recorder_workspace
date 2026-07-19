@@ -59,9 +59,18 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
     state = AppState.create(_settings(tmp_path), live_page_client=fake_client)  # type: ignore[arg-type]
     app = create_app(state=state)
 
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://127.0.0.1:3399") as client:
+        rejected_cross_origin = client.post(
+            "/api/rooms",
+            headers={"Origin": "https://evil.example"},
+            json={"room_key": "blocked", "room_url": "73504089679"},
+        )
+        assert rejected_cross_origin.status_code == 403
+        assert rejected_cross_origin.json()["code"] == "cross_origin_write"
+
         created = client.post(
             "/api/rooms",
+            headers={"Origin": "http://127.0.0.1:3399"},
             json={"room_key": "group-a", "room_url": "73504089679"},
         )
         assert created.status_code == 201
@@ -72,6 +81,30 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
             json={"room_key": "group-a", "room_url": "73504089679"},
         )
         assert duplicate.status_code == 409
+
+        duplicate_url = client.post(
+            "/api/rooms",
+            json={"room_key": "group-b", "room_url": "73504089679"},
+        )
+        assert duplicate_url.status_code == 409
+
+        second_room = client.post(
+            "/api/rooms",
+            json={"room_key": "group-b", "room_url": "73504089680"},
+        )
+        assert second_room.status_code == 201
+
+        duplicate_url_update = client.patch(
+            "/api/rooms/group-b",
+            json={"room_url": "https://live.douyin.com/73504089679?from=test"},
+        )
+        assert duplicate_url_update.status_code == 409
+
+        rejected_null = client.patch(
+            "/api/rooms/group-a",
+            json={"quality": None},
+        )
+        assert rejected_null.status_code == 422
 
         updated = client.patch(
             "/api/rooms/group-a",

@@ -14,6 +14,7 @@ REQUIRED = {
     ".gitignore",
     "AGENTS.md",
     "README.md",
+    "app/security.py",
     "THIRD_PARTY_NOTICES.md",
     "config/config.json.default",
     "config/runtime.env.default",

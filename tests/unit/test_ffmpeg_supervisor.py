@@ -61,6 +61,8 @@ def test_redaction_never_returns_cookie_or_query_values() -> None:
     assert "SECRET" not in redacted
     assert "PRIVATE" not in redacted
     assert "signature=<redacted>" in redacted
+    assert "live/a.flv" not in redacted
+    assert "<redacted-path>.flv" in redacted
     assert "Cookie: <redacted>" in sanitize_log_line("Cookie: ttwid=PRIVATE")
 
 
@@ -103,7 +105,15 @@ print('progress=end', flush=True)
             stderr_log_path=tmp_path / "ffmpeg.log",
             cwd=tmp_path,
         )
-        supervisor = RecorderSupervisor(spec)
+
+        def failing_callback(_value: object) -> None:
+            raise RuntimeError("synthetic callback failure")
+
+        supervisor = RecorderSupervisor(
+            spec,
+            on_progress=failing_callback,
+            on_stderr=failing_callback,
+        )
         await supervisor.start()
         await asyncio.sleep(0.15)
         result = await supervisor.stop(graceful_timeout=2, terminate_timeout=1)
@@ -111,6 +121,7 @@ print('progress=end', flush=True)
         assert result.last_progress is not None
         assert result.last_progress.progress == "end"
         assert result.stderr_lines == 1
+        assert result.callback_error_count == 3
         log = spec.stderr_log_path.read_text(encoding="utf-8")
         assert "SECRET" not in log
         assert "signature=<redacted>" in log
@@ -118,7 +129,7 @@ print('progress=end', flush=True)
     asyncio.run(scenario())
 
 
-def test_recording_plan_rejects_ip_literal_and_unknown_options(tmp_path: Path) -> None:
+def test_recording_plan_rejects_unsafe_hosts_and_unknown_options(tmp_path: Path) -> None:
     with pytest.raises(RecorderConfigurationError, match="IP 字面量"):
         RecordingPlan(
             ffmpeg_path="ffmpeg",
@@ -126,6 +137,19 @@ def test_recording_plan_rejects_ip_literal_and_unknown_options(tmp_path: Path) -
             session_id="session-a",
             stream=StreamInput(
                 url="http://8.8.8.8/live.flv",
+                protocol="flv",
+                quality="origin",
+            ),
+            output_root=tmp_path,
+        )
+
+    with pytest.raises(RecorderConfigurationError, match="CDN 范围"):
+        RecordingPlan(
+            ffmpeg_path="ffmpeg",
+            room_key="group-a",
+            session_id="session-a",
+            stream=StreamInput(
+                url="https://attacker.example/live.flv?token=SECRET",
                 protocol="flv",
                 quality="origin",
             ),
@@ -145,3 +169,99 @@ def test_recording_plan_rejects_ip_literal_and_unknown_options(tmp_path: Path) -
             output_root=tmp_path,
             extra_input_args=("-loglevel", "debug"),
         )
+
+
+def test_recording_plan_rejects_path_segments_ports_and_invalid_stream_metadata(
+    tmp_path: Path,
+) -> None:
+    safe_stream = StreamInput(
+        url="https://pull.example.douyincdn.com/live/a.flv",
+        protocol="flv",
+        quality="origin",
+    )
+    for room_key, session_id in ((".", "session-a"), ("..", "session-a"), ("group-a", "..")):
+        with pytest.raises(RecorderConfigurationError, match="路径段"):
+            RecordingPlan(
+                ffmpeg_path="ffmpeg",
+                room_key=room_key,
+                session_id=session_id,
+                stream=safe_stream,
+                output_root=tmp_path,
+            )
+
+    for url in (
+        "https://pull.example.douyincdn.com:99999/live/a.flv",
+        "https://pull.example.douyincdn.com:80/live/a.flv",
+        "http://pull.example.douyincdn.com:443/live/a.flv",
+    ):
+        with pytest.raises(RecorderConfigurationError, match="端口"):
+            RecordingPlan(
+                ffmpeg_path="ffmpeg",
+                room_key="group-a",
+                session_id="session-a",
+                stream=StreamInput(url=url, protocol="flv", quality="origin"),
+                output_root=tmp_path,
+            )
+
+    overlong_url = "https://pull.example.douyincdn.com/" + ("a" * 16_384) + ".flv"
+    with pytest.raises(RecorderConfigurationError, match="长度"):
+        RecordingPlan(
+            ffmpeg_path="ffmpeg",
+            room_key="group-a",
+            session_id="session-a",
+            stream=StreamInput(url=overlong_url, protocol="flv", quality="origin"),
+            output_root=tmp_path,
+        )
+
+    for url in (
+        "https://@pull.example.douyincdn.com/live/a.flv",
+        "https://pull.example.douyincdn.com/live/a.flv#fragment",
+    ):
+        with pytest.raises(RecorderConfigurationError):
+            RecordingPlan(
+                ffmpeg_path="ffmpeg",
+                room_key="group-a",
+                session_id="session-a",
+                stream=StreamInput(url=url, protocol="flv", quality="origin"),
+                output_root=tmp_path,
+            )
+
+    with pytest.raises(RecorderConfigurationError, match="协议"):
+        RecordingPlan(
+            ffmpeg_path="ffmpeg",
+            room_key="group-a",
+            session_id="session-a",
+            stream=StreamInput(
+                url="https://pull.example.douyincdn.com/live/a.flv",
+                protocol="rtmp",
+                quality="origin",
+            ),
+            output_root=tmp_path,
+        )
+
+
+def test_recording_plan_refuses_overwrite_and_dangerous_headers(tmp_path: Path) -> None:
+    plan = RecordingPlan(
+        ffmpeg_path="ffmpeg",
+        room_key="group-a",
+        session_id="session-a",
+        stream=StreamInput(
+            url="https://pull.example.douyincdn.com/live/a.flv?signature=SECRET",
+            protocol="flv",
+            quality="origin",
+        ),
+        output_root=tmp_path,
+    )
+    spec = plan.process_spec()
+    assert "-n" in spec.argv
+    assert "-y" not in spec.argv
+    assert "SECRET" not in " ".join(spec.redacted_argv)
+
+    unsafe = StreamInput(
+        url="https://pull.example.douyincdn.com/live/a.flv",
+        protocol="flv",
+        quality="origin",
+        headers=(("Host", "127.0.0.1"),),
+    )
+    with pytest.raises(RecorderConfigurationError, match="不允许"):
+        unsafe.header_blob()

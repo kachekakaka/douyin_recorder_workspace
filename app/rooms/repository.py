@@ -16,7 +16,7 @@ class RoomNotFoundError(LookupError):
 
 
 class RoomAlreadyExistsError(ValueError):
-    """Raised when room_key already exists."""
+    """Raised when a room key or normalized room URL already exists."""
 
 
 _ROOM_COLUMNS = (
@@ -70,6 +70,14 @@ class RoomRepository:
         now_ms = int(time.time() * 1000)
 
         async def operation(connection: aiosqlite.Connection) -> None:
+            cursor = await connection.execute(
+                "SELECT room_key FROM rooms WHERE room_url = ? LIMIT 1",
+                (payload.room_url,),
+            )
+            existing = await cursor.fetchone()
+            await cursor.close()
+            if existing is not None:
+                raise RoomAlreadyExistsError(f"room_url:{payload.room_url}")
             await connection.execute(
                 """
                 INSERT INTO rooms(
@@ -115,10 +123,24 @@ class RoomRepository:
             int(value) if key == "enabled" else value for key, value in changes.items()
         ]
         assignments = ", ".join(f"{column} = ?" for column in columns)
-        await self.database.execute(
-            f"UPDATE rooms SET {assignments} WHERE room_key = ?",
-            (*values, room_key),
-        )
+
+        async def operation(connection: aiosqlite.Connection) -> None:
+            room_url = changes.get("room_url")
+            if room_url is not None:
+                cursor = await connection.execute(
+                    "SELECT room_key FROM rooms WHERE room_url = ? AND room_key <> ? LIMIT 1",
+                    (room_url, room_key),
+                )
+                existing = await cursor.fetchone()
+                await cursor.close()
+                if existing is not None:
+                    raise RoomAlreadyExistsError(f"room_url:{room_url}")
+            await connection.execute(
+                f"UPDATE rooms SET {assignments} WHERE room_key = ?",
+                (*values, room_key),
+            )
+
+        await self.database.write(operation)
         return await self.get_room(room_key)
 
     async def set_enabled(self, room_key: str, enabled: bool) -> RoomRecord:

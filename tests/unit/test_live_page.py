@@ -23,6 +23,8 @@ def test_room_reference_normalization_is_strict() -> None:
         "https://127.0.0.1/73504089679",
         "https://live.douyin.com/a/b",
         "https://user:pass@live.douyin.com/73504089679",
+        "https://@live.douyin.com/73504089679",
+        "https://live.douyin.com:99999/73504089679",
     ):
         with pytest.raises(LivePageError):
             normalize_room_reference(unsafe)
@@ -60,16 +62,19 @@ def test_live_page_fixture_extracts_private_candidates_but_public_result_is_reda
     candidates = public["stream_candidates"]
     assert isinstance(candidates, list)
     assert all("url" not in item for item in candidates)
+    assert all("path" not in item for item in candidates)
+    assert {item["path_suffix"] for item in candidates} == {".flv", ".m3u8"}
+    assert all(len(item["path_sha256"]) == 64 for item in candidates)
 
 
 def test_live_page_rejects_private_or_unknown_stream_hosts() -> None:
-    body = b'''<script type="application/json">{
+    body = b"""<script type="application/json">{
       "stream_url": {
         "flv": "http://127.0.0.1/private.flv",
         "hls": "https://attacker.invalid/live.m3u8?token=SECRET",
         "backup": "http://8.8.8.8/public.flv?token=SECRET"
       }
-    }</script>'''
+    }</script>"""
     result = inspect_live_page(
         body,
         room_url="73504089679",
@@ -78,6 +83,28 @@ def test_live_page_rejects_private_or_unknown_stream_hosts() -> None:
     )
     assert result.snapshot.live_state == "unknown"
     assert result.candidates == ()
+
+
+def test_live_page_rejects_invalid_ports_and_redacts_untrusted_source_keys() -> None:
+    body = b"""<script type="application/json">{
+      "SECRET_STREAM_TOKEN": "https://pull.example.douyincdn.com/live/ok.flv?token=VALUE",
+      "invalid_port": "https://pull.example.douyincdn.com:99999/live/bad.flv",
+      "wrong_https_port": "https://pull.example.douyincdn.com:80/live/bad.flv",
+      "wrong_http_port": "http://pull.example.douyincdn.com:443/live/bad.flv",
+      "empty_userinfo": "https://@pull.example.douyincdn.com/live/bad.flv"
+    }</script>"""
+    result = inspect_live_page(
+        body,
+        room_url="73504089679",
+        http_status=200,
+        final_url="https://live.douyin.com/73504089679",
+    )
+
+    assert len(result.candidates) == 1
+    public_candidates = result.snapshot.to_public_dict()["stream_candidates"]
+    assert isinstance(public_candidates, list)
+    assert "SECRET_STREAM_TOKEN" not in str(public_candidates)
+    assert public_candidates[0]["source_path"].startswith("<key-")
 
 
 def test_live_page_client_rejects_redirect_outside_douyin() -> None:
@@ -95,11 +122,59 @@ def test_live_page_client_rejects_redirect_outside_douyin() -> None:
 
     async def scenario() -> None:
         transport = httpx.MockTransport(handler)
-        async with httpx.AsyncClient(transport=transport, follow_redirects=False) as client:
+        async with httpx.AsyncClient(transport=transport, follow_redirects=True) as client:
             live_client = DouyinLivePageClient(client=client)
             result = await live_client.check("73504089679")
             assert result.snapshot.live_state == "error"
             assert result.snapshot.error_code == "LivePageError"
             assert requested == ["https://live.douyin.com/73504089679"]
+
+    asyncio.run(scenario())
+
+
+def test_live_page_non_success_status_is_error_and_has_no_usable_candidates() -> None:
+    body = (
+        b'<script type="application/json">'
+        b'{"flv":"https://pull.example.douyincdn.com/live/error.flv?token=SECRET"}'
+        b"</script>"
+    )
+    for status in (304, 404, 500):
+        result = inspect_live_page(
+            body,
+            room_url="73504089679",
+            http_status=status,
+            final_url="https://live.douyin.com/73504089679",
+        )
+        assert result.snapshot.live_state == "error"
+        assert result.snapshot.error_code == f"http_{status}"
+        assert result.candidates == ()
+        assert result.snapshot.stream_candidates == ()
+
+
+def test_live_page_client_rejects_redirect_credentials_or_custom_port() -> None:
+    import asyncio
+
+    import httpx
+
+    from app.douyin.live_page import DouyinLivePageClient
+
+    async def scenario() -> None:
+        for location in (
+            "https://user:pass@live.douyin.com/73504089679",
+            "https://@live.douyin.com/73504089679",
+            "https://live.douyin.com:99999/73504089679",
+            "https://live.douyin.com:444/73504089679",
+            "https://[broken",
+        ):
+
+            def handler(_request: httpx.Request, target: str = location) -> httpx.Response:
+                return httpx.Response(302, headers={"location": target})
+
+            transport = httpx.MockTransport(handler)
+            async with httpx.AsyncClient(transport=transport, follow_redirects=False) as client:
+                live_client = DouyinLivePageClient(client=client)
+                result = await live_client.check("73504089679")
+                assert result.snapshot.live_state == "error"
+                assert result.snapshot.error_code == "LivePageError"
 
     asyncio.run(scenario())

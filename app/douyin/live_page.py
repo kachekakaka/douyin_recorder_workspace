@@ -7,6 +7,7 @@ import json
 import re
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urljoin, urlsplit, urlunsplit
 
@@ -16,6 +17,10 @@ MAX_BODY_BYTES = 4 * 1024 * 1024
 MAX_JSON_STRING_BYTES = 2 * 1024 * 1024
 MAX_JSON_NODES = 100_000
 MAX_REDIRECTS = 5
+MAX_STREAM_CANDIDATES = 64
+MAX_TEXT_URL_MATCHES = 256
+MAX_WSS_MATCHES = 256
+MAX_STREAM_URL_CHARS = 16_384
 
 _ROOM_REFERENCE_RE = re.compile(r"^[A-Za-z0-9_.-]{3,80}$")
 _RENDER_DATA_RE = re.compile(
@@ -63,6 +68,21 @@ _QUALITY_ALIASES = {
     "low": "ld",
     "md": "md",
     "medium": "md",
+}
+_SAFE_SOURCE_KEYS = {
+    "app",
+    "room",
+    "stream_url",
+    "live_core_sdk_data",
+    "pull_data",
+    "stream_data",
+    "data",
+    "main",
+    "flv",
+    "hls",
+    "flv_pull_url",
+    "hls_pull_url",
+    *_QUALITY_ALIASES,
 }
 _ALLOWED_PAGE_HOSTS = {"live.douyin.com", "www.douyin.com", "douyin.com"}
 _ALLOWED_STREAM_SUFFIXES = (
@@ -117,12 +137,17 @@ class StreamCandidate:
 
     def to_public_dict(self) -> dict[str, object]:
         parsed = urlsplit(self.url)
+        raw_path = parsed.path or "/"
+        suffix = Path(raw_path).suffix.casefold()
+        if suffix not in {".flv", ".m3u8"}:
+            suffix = ""
         query_keys = sorted({key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)})
         return {
             "protocol": self.protocol,
             "quality": self.quality,
             "host": self.host,
-            "path": parsed.path or "/",
+            "path_suffix": suffix,
+            "path_sha256": hashlib.sha256(raw_path.encode()).hexdigest(),
             "query_keys": query_keys,
             "url_sha256": hashlib.sha256(self.url.encode()).hexdigest(),
             "source_path": self.source_path,
@@ -165,6 +190,8 @@ class LivePageResult:
 
 def normalize_room_reference(value: str) -> NormalizedRoomReference:
     raw = value.strip()
+    if any(ord(char) < 32 or ord(char) == 127 for char in raw):
+        raise LivePageError("直播间地址包含控制字符")
     if _ROOM_REFERENCE_RE.fullmatch(raw):
         return NormalizedRoomReference(
             room_url=f"https://live.douyin.com/{raw}",
@@ -173,13 +200,14 @@ def normalize_room_reference(value: str) -> NormalizedRoomReference:
 
     try:
         parsed = urlsplit(raw)
+        port = parsed.port
+        host = (parsed.hostname or "").casefold().rstrip(".")
     except ValueError as exc:
         raise LivePageError("直播间地址格式无效") from exc
-    if parsed.scheme != "https" or not parsed.hostname:
+    if parsed.scheme != "https" or not host:
         raise LivePageError("直播间地址必须是 https://live.douyin.com/<抖音号或房间标识>")
-    if parsed.username or parsed.password or parsed.port not in (None, 443):
+    if parsed.username is not None or parsed.password is not None or port not in (None, 443):
         raise LivePageError("直播间地址不得包含凭据或自定义端口")
-    host = parsed.hostname.casefold().rstrip(".")
     if host != "live.douyin.com":
         raise LivePageError("P1A 只允许 live.douyin.com 直播间地址")
     parts = [part for part in parsed.path.split("/") if part]
@@ -212,15 +240,25 @@ def _is_public_host(host: str) -> bool:
 
 def _normalize_stream_url(value: str) -> str | None:
     candidate = html.unescape(value).replace("\\u0026", "&").replace("\\/", "/")
+    if len(candidate) > MAX_STREAM_URL_CHARS or any(
+        ord(char) < 32 or ord(char) == 127 for char in candidate
+    ):
+        return None
     try:
         parsed = urlsplit(candidate)
+        port = parsed.port
+        host = (parsed.hostname or "").casefold().rstrip(".")
     except ValueError:
         return None
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    if parsed.scheme not in {"http", "https"} or not host:
         return None
-    if parsed.username or parsed.password or parsed.port not in (None, 80, 443):
+    expected_port = 80 if parsed.scheme == "http" else 443
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, expected_port)
+    ):
         return None
-    host = parsed.hostname.casefold().rstrip(".")
     if not _is_public_host(host):
         return None
     return urlunsplit((parsed.scheme, host, parsed.path or "/", parsed.query, ""))
@@ -230,11 +268,18 @@ def _sanitize_wss_url(value: str) -> str | None:
     candidate = html.unescape(value).replace("\\u0026", "&").replace("\\/", "/")
     try:
         parsed = urlsplit(candidate)
+        port = parsed.port
+        host = (parsed.hostname or "").casefold().rstrip(".")
     except ValueError:
         return None
-    if parsed.scheme != "wss" or not parsed.hostname:
+    if (
+        parsed.scheme != "wss"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
         return None
-    host = parsed.hostname.casefold().rstrip(".")
     if not (host == "douyin.com" or host.endswith(".douyin.com")):
         return None
     return f"wss://{host}{parsed.path or '/'}"
@@ -333,6 +378,21 @@ def _first_scalar(
     return None
 
 
+def _safe_source_path(path: tuple[str, ...]) -> str:
+    output: list[str] = []
+    for part in path[-10:]:
+        value = str(part)
+        normalized = _normalize_key(value)
+        if value in {"<text>", "<json-string>"} or (value.isdigit() and len(value) <= 4):
+            output.append(value)
+        elif normalized in _SAFE_SOURCE_KEYS:
+            output.append(normalized)
+        else:
+            digest = hashlib.sha256(value.encode()).hexdigest()[:12]
+            output.append(f"<key-{digest}>")
+    return "/".join(output) or "<text>"
+
+
 def _extract_candidates(
     rows: list[tuple[tuple[str, ...], Any]], text: str
 ) -> tuple[StreamCandidate, ...]:
@@ -351,13 +411,15 @@ def _extract_candidates(
         if not has_stream_hint and not has_media_suffix:
             return
         quality = _quality_from_path(path)
+        previous = candidates.get(normalized)
+        if previous is None and len(candidates) >= MAX_STREAM_CANDIDATES:
+            return
         current = StreamCandidate(
             protocol=protocol,
             quality=quality,
             url=normalized,
-            source_path="/".join(path[-10:]) or "<text>",
+            source_path=_safe_source_path(path),
         )
-        previous = candidates.get(normalized)
         if previous is None or (
             _QUALITY_ORDER.index(current.quality) < _QUALITY_ORDER.index(previous.quality)
         ):
@@ -374,8 +436,10 @@ def _extract_candidates(
                 if isinstance(raw_url, str):
                     add((*path, str(quality)), raw_url)
 
-    for match in _URL_RE.findall(text):
-        add(("<text>",), match)
+    for index, match in enumerate(_URL_RE.finditer(text)):
+        if index >= MAX_TEXT_URL_MATCHES:
+            break
+        add(("<text>",), match.group(0))
 
     return tuple(
         sorted(
@@ -413,10 +477,20 @@ def inspect_live_page(
     error_code: str | None = None,
 ) -> LivePageResult:
     reference = normalize_room_reference(room_url)
-    final = urlsplit(final_url or reference.room_url)
-    final_host = (final.hostname or "").casefold().rstrip(".")
-    if final_host not in _ALLOWED_PAGE_HOSTS:
-        raise LivePageError(f"直播页最终主机不在允许范围: {final_host or '<empty>'}")
+    try:
+        final = urlsplit(final_url or reference.room_url)
+        final_port = final.port
+        final_host = (final.hostname or "").casefold().rstrip(".")
+    except ValueError as exc:
+        raise LivePageError("直播页最终地址格式无效") from exc
+    if (
+        final.scheme != "https"
+        or final_host not in _ALLOWED_PAGE_HOSTS
+        or final.username
+        or final.password
+        or final_port not in (None, 443)
+    ):
+        raise LivePageError(f"直播页最终地址不在允许范围: {final_host or '<empty>'}")
 
     text = body.decode("utf-8", errors="replace")
     decoded_text = "\n".join(_decoded_text_views(text))
@@ -432,8 +506,10 @@ def inspect_live_page(
     marker_counts = {marker: lower.count(marker.casefold()) for marker in _SAFE_MARKERS}
 
     websocket_endpoints: list[str] = []
-    for value in _WSS_RE.findall(decoded_text):
-        safe = _sanitize_wss_url(value)
+    for index, match in enumerate(_WSS_RE.finditer(decoded_text)):
+        if index >= MAX_WSS_MATCHES:
+            break
+        safe = _sanitize_wss_url(match.group(0))
         if safe and safe not in websocket_endpoints:
             websocket_endpoints.append(safe)
         if len(websocket_endpoints) >= 20:
@@ -441,15 +517,20 @@ def inspect_live_page(
 
     if error_code:
         live_state = "error"
+    elif http_status is not None and not 200 <= http_status < 300:
+        live_state = "error"
+        error_code = f"http_{http_status}"
     elif blocked_markers:
         live_state = "blocked"
     elif candidates:
         live_state = "live"
     else:
         live_state = "unknown"
+    usable_candidates = candidates if live_state == "live" else ()
 
     notes = (
-        "完整签名流 URL 只保留在当前进程内存；公开结果仅返回 host/path/query key/hash。",
+        "完整签名流 URL 只保留在当前进程内存；公开结果仅返回 "
+        "host、媒体后缀、path/url hash 和 query key。",
         "数字 status 尚未形成现场稳定映射；没有流候选时保持 unknown，不猜测 offline。",
         f"解析 JSON 节点数：{visited_nodes}；发现 status 值数量：{len(status_values)}。",
         "live_state=live 仅表示页面中解析出受限域名的 FLV/HLS 候选，不等于推荐收礼人协议已验证。",
@@ -470,11 +551,11 @@ def inspect_live_page(
         blocked_markers=blocked_markers,
         marker_counts=marker_counts,
         sanitized_websocket_endpoints=tuple(websocket_endpoints),
-        stream_candidates=candidates,
+        stream_candidates=usable_candidates,
         notes=notes,
         error_code=error_code,
     )
-    return LivePageResult(snapshot=snapshot, candidates=candidates)
+    return LivePageResult(snapshot=snapshot, candidates=usable_candidates)
 
 
 class DouyinLivePageClient:
@@ -516,17 +597,27 @@ class DouyinLivePageClient:
         last_status: int | None = None
         try:
             for _ in range(MAX_REDIRECTS + 1):
-                async with self._client.stream("GET", url) as response:
+                async with self._client.stream("GET", url, follow_redirects=False) as response:
                     last_status = response.status_code
                     if response.status_code in {301, 302, 303, 307, 308}:
                         location = response.headers.get("location", "").strip()
                         if not location:
                             raise LivePageError("直播页重定向缺少 Location")
-                        next_url = urljoin(url, location)
-                        parsed = urlsplit(next_url)
-                        host = (parsed.hostname or "").casefold().rstrip(".")
-                        if parsed.scheme != "https" or host not in _ALLOWED_PAGE_HOSTS:
-                            raise LivePageError("直播页重定向离开允许的抖音主机")
+                        try:
+                            next_url = urljoin(url, location)
+                            parsed = urlsplit(next_url)
+                            port = parsed.port
+                            host = (parsed.hostname or "").casefold().rstrip(".")
+                        except ValueError as exc:
+                            raise LivePageError("直播页重定向地址格式无效") from exc
+                        if (
+                            parsed.scheme != "https"
+                            or host not in _ALLOWED_PAGE_HOSTS
+                            or parsed.username
+                            or parsed.password
+                            or port not in (None, 443)
+                        ):
+                            raise LivePageError("直播页重定向离开允许的抖音主机或包含危险凭据")
                         url = urlunsplit(("https", host, parsed.path or "/", parsed.query, ""))
                         continue
 

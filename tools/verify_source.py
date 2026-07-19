@@ -18,6 +18,7 @@ from tools.verify_repository_baseline import main as verify_baseline  # noqa: E4
 
 _REQUIRED = (
     "app/main.py",
+    "app/security.py",
     "app/settings.py",
     "app/db/core.py",
     "app/db/migrations/__init__.py",
@@ -114,8 +115,17 @@ def _verify_live_page_fixture(errors: list[str]) -> None:
         public = json.dumps(result.snapshot.to_public_dict(), ensure_ascii=False, sort_keys=True)
         if "SECRET" in public or "PRIVATE" in public:
             errors.append("直播页公开结果泄露合成签名值")
-        if any("url" in item for item in result.snapshot.to_public_dict()["stream_candidates"]):
+        public_candidates = result.snapshot.to_public_dict()["stream_candidates"]
+        if any("url" in item for item in public_candidates):
             errors.append("直播页公开候选包含完整 url 字段")
+        if any("path" in item for item in public_candidates):
+            errors.append("直播页公开候选包含原始 path 字段")
+        if any(
+            not isinstance(item.get("path_sha256"), str)
+            or len(str(item.get("path_sha256"))) != 64
+            for item in public_candidates
+        ):
+            errors.append("直播页公开候选缺少 path SHA-256")
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         errors.append(f"直播页 fixture 校验失败: {exc}")
 

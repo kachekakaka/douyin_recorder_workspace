@@ -62,6 +62,11 @@ class RoomPatch(BaseModel):
     def require_change(self) -> RoomPatch:
         if not self.model_fields_set:
             raise ValueError("至少提供一个需要修改的字段")
+        null_fields = sorted(
+            name for name in self.model_fields_set if getattr(self, name, None) is None
+        )
+        if null_fields:
+            raise ValueError(f"修改字段不得为 null: {', '.join(null_fields)}")
         return self
 
 
