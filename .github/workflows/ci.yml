@@ -188,3 +188,89 @@ jobs:
           path: ${{ runner.temp }}/verify-windows.log
           if-no-files-found: ignore
           retention-days: 7
+
+  materialize-resolver:
+    name: Materialize verified P1A resolver
+    if: github.event_name == 'push' && github.ref_name == 'feature/p1a-single-room-media-foundation'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact triggering branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1a-single-room-media-foundation
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+
+      - name: Materialize reviewed resolver sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: python .github/p1a-resolver-materialize.py
+
+      - name: Install locked development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+
+      - name: Run complete repository validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find web -type f -name '*.js' -print0)
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version
+          ffprobe -hide_banner -version
+
+      - name: Run FFmpeg Supervisor smoke
+        run: |
+          python tools/ffmpeg_supervisor_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/p1a-resolver-smoke"
+
+      - name: Commit and push verified resolver milestone
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- \
+            .github/p1a-resolver-materialize.py \
+            .github/workflows/ci.yml \
+            .github/workflows/p1a-resolver-assemble-once.yml \
+            app/douyin/live_page.py \
+            app/douyin/stream_resolver.py \
+            app/rooms/service.py \
+            app/state.py \
+            tests/integration/test_room_api.py \
+            tests/unit/test_douyin_network_probe.py \
+            tests/unit/test_live_page.py \
+            tests/unit/test_stream_resolver.py \
+            tools/douyin_network_probe.py \
+            tools/verify_source.py
+          test "$(git diff --cached --name-only | wc -l)" -eq 13
+          git diff --cached --check
+          git commit -m "feat: add in-memory Douyin stream resolver fallback"
+          git push origin "HEAD:feature/p1a-single-room-media-foundation"
+          git rev-parse HEAD
