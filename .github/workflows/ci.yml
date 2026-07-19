@@ -44,13 +44,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python tools/verify_repository_baseline.py 2>&1 | tee verify-baseline.log
+          python tools/verify_repository_baseline.py 2>&1 | tee "$RUNNER_TEMP/verify-baseline.log"
 
       - name: Verify P0 source boundaries
         shell: bash
         run: |
           set -o pipefail
-          python tools/verify_source.py 2>&1 | tee verify-source.log
+          python tools/verify_source.py 2>&1 | tee "$RUNNER_TEMP/verify-source.log"
 
       - name: Compile Python
         run: python -m compileall -q app tests tools
@@ -59,13 +59,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m ruff check --no-cache app tests tools 2>&1 | tee ruff.log
+          python -m ruff check --no-cache app tests tools 2>&1 | tee "$RUNNER_TEMP/ruff.log"
 
       - name: Pytest
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -q -p no:cacheprovider --tb=short 2>&1 | tee pytest.log
+          python -m pytest -q -p no:cacheprovider --tb=short 2>&1 | tee "$RUNNER_TEMP/pytest.log"
 
       - name: Verify deterministic replay report
         run: |
@@ -87,10 +87,13 @@ jobs:
 
       - name: Create and restore source recovery assets
         if: matrix.python-version == '3.12'
+        shell: bash
         run: |
+          set -o pipefail
           python tools/create_recovery_assets.py \
             --output-dir "$RUNNER_TEMP/recovery" \
-            --label "ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            --label "ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            2>&1 | tee "$RUNNER_TEMP/recovery.log"
 
       - name: Upload failure diagnostics
         if: failure()
@@ -98,10 +101,11 @@ jobs:
         with:
           name: diagnostics-${{ matrix.python-version }}-${{ github.run_attempt }}
           path: |
-            verify-baseline.log
-            verify-source.log
-            ruff.log
-            pytest.log
+            ${{ runner.temp }}/verify-baseline.log
+            ${{ runner.temp }}/verify-source.log
+            ${{ runner.temp }}/ruff.log
+            ${{ runner.temp }}/pytest.log
+            ${{ runner.temp }}/recovery.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -148,15 +152,16 @@ jobs:
       - name: Run the exact Windows verification entrypoint
         shell: cmd
         run: |
-          call verify.bat > verify-windows.log 2>&1
+          set "VERIFY_LOG=%RUNNER_TEMP%\verify-windows.log"
+          call verify.bat > "%VERIFY_LOG%" 2>&1
           set "VERIFY_RC=%ERRORLEVEL%"
-          type verify-windows.log
+          type "%VERIFY_LOG%"
           exit /b %VERIFY_RC%
       - name: Upload Windows verification log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: windows-verify-${{ github.run_attempt }}
-          path: verify-windows.log
+          path: ${{ runner.temp }}/verify-windows.log
           if-no-files-found: ignore
           retention-days: 7
