@@ -58,7 +58,9 @@ FORBIDDEN_PREFIXES = (
     ".venv/",
 )
 SECRET_RE = re.compile(
-    r"(?i)(?:sessionid|sessionid_ss|ttwid|cookie)\s*[=:]\s*['\"]?[A-Za-z0-9%._~-]{16,}"
+    r"(?ix)(?:sessionid|sessionid_ss|ttwid)\s*=\s*['\"]?[A-Za-z0-9%._~-]{16,}"
+    r"|(?:DOUYIN_COOKIE|COOKIE)\s*=\s*['\"]?[A-Za-z0-9%._~-]{16,}"
+    r"|cookie\s*[:=]\s*['\"][^'\"\r\n]{16,}['\"]"
 )
 SIGNED_WSS_RE = re.compile(r"wss://[^\s'\"<>]+\?(?:[^\s'\"<>]*)(?:signature|internal_ext)=")
 USER_PATH_RE = re.compile(r"(?:[A-Za-z]:\\Users\\[^\\]+\\|/home/[^/]+/)")
