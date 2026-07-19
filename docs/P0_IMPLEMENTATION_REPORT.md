@@ -1,8 +1,8 @@
 # P0 实施报告
 
-状态：**工程实现完成，现场协议事实验证进行中；不进入完整 P1。**
+状态：**P0 工程实现与 CI 已完成；授权现场预检已执行，但未建立 IM transport，协议事实验证继续进行；不进入完整 P1。**
 
-关联：GitHub Issue #1
+关联：GitHub Issue #1、Pull Request #2
 
 ## 1. 已完成工程交付
 
@@ -43,7 +43,9 @@
 - GitHub Actions 覆盖 Python 3.12/3.13、Windows 和前端；
 - CI 生成并验证 Git Bundle、源码 ZIP 和 SHA-256。
 
-## 2. 自动测试范围
+## 2. 自动测试范围与结果
+
+覆盖：
 
 - 设置模板与 loopback 安全边界；
 - SQLite migration、WAL、外键、唯一约束和一致性备份；
@@ -56,7 +58,22 @@
 - FastAPI health/readiness/status/static page；
 - 直播页预检不泄露完整 WSS query。
 
-## 3. 授权测试目标
+GitHub Actions run `29669746416` 全部通过：
+
+```text
+Python 3.12                       success
+Python 3.13                       success
+Ruff                              success
+pytest                            success
+确定性 fixture replay             success
+Git Bundle / source ZIP 恢复      success
+原生 JavaScript 语法              success
+Windows verify.bat                success
+```
+
+CI 生成的恢复资产包含完整 Git Bundle、源码 ZIP、manifest 和 SHA-256；临时克隆、`git fsck` 和仓库基线校验均通过。
+
+## 3. 授权测试目标与结果
 
 用户提供并授权用于 P0 现场测试的抖音号/直播路径标识：
 
@@ -64,14 +81,23 @@
 73504089679
 ```
 
-GitHub 的 `P0 Douyin live preflight` 工作流会对该标识执行：
+GitHub 的 `P0 Douyin live preflight` run `29669746415` 成功执行：
 
 1. 无登录 HTTP 直播页预检；
-2. 无登录 Chrome/CDP WSS 观察；
+2. 无登录 Chrome/CDP WSS 观察 60 秒；
 3. 只上传脱敏 JSON 报告，保留 3 天；
-4. 不上传网页正文、Cookie、完整签名 URL、原始帧、payload 或 recipient 明文 ID。
+4. 未上传网页正文、Cookie、完整签名 URL、原始帧、payload 或 recipient 明文 ID。
 
-该工作流即使未观察到目标消息也不自动判定房间永久不支持；可能是未开播、网页风控、观察窗口过短、当前没有成员切换，或浏览器未建立目标 WSS。
+实际结果：
+
+- HTTP 200、无重定向，页面中存在 FLV/HLS、stream data、room/webcast 等直播结构标记；
+- Chrome 正常启动且页面已加载；
+- 没有观察到浏览器创建抖音 WSS；
+- 二进制帧、envelope、method 和目标消息数量均为 0；
+- `transport_live_verified=false`；
+- `target_live_verified=false`。
+
+该结果不能自动判定房间永久不支持目标消息；可能是测试时未开播、无登录/自动化环境降级、需要额外交互或游客上下文，或者页面在观察窗口内未建立 WSS。完整脱敏记录见 `docs/protocol/live-probes/2026-07-19-73504089679.md`。
 
 ## 4. 仍未解决的协议事实
 

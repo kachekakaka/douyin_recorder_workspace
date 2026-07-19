@@ -1,6 +1,6 @@
 # P0 抖音协议验证状态
 
-状态：**工程工具、最小 envelope、严格 reducer、合成 fixture 和授权现场预检流程已完成；目标消息的现场事实仍需观察。**
+状态：**工程工具、最小 envelope、严格 reducer、合成 fixture、CI 与授权现场预检均已执行；本次现场预检未建立 IM transport，目标消息事实仍未验证。**
 
 ## 已实现
 
@@ -81,6 +81,24 @@ docs/protocol/P0_SYNTHETIC_REPLAY_REPORT.json
 ```
 
 本次自动测试只做公开网页访问和浏览器被动 WSS 观察，不登录、不绕过验证、不发送互动消息。未观察到目标消息不能证明房间永久不支持，可能是未开播、网页风控、观察窗口内没有切换或页面未建立目标 WSS。
+
+## 2026-07-19 授权预检结果
+
+对应记录：
+
+```text
+分支提交：39520e699542d5394dde846f2e52d845d5924ba9
+CI run：29669746416（success）
+P0 Douyin live preflight run：29669746415（success）
+```
+
+HTTP 预检返回 200、无重定向，页面中存在 FLV/HLS、stream data、room/webcast 等直播结构标记。60 秒无登录 Chrome/CDP 观察中页面成功加载，但 `websocket_count=0`、`binary_frame_count=0`、`target_message_count=0`。因此本轮只确认公开页面可达和预检工具安全可用，未确认 IM transport 或目标 method。
+
+完整脱敏结论：
+
+```text
+docs/protocol/live-probes/2026-07-19-73504089679.md
+```
 
 ## 本地现场运行
 
