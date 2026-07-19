@@ -4,7 +4,7 @@ setlocal EnableExtensions
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
-title douyin_recorder_workspace P0 - 完整自检
+title douyin_recorder_workspace P1A - 完整自检
 
 call scripts\windows\prepare-python.bat dev
 if errorlevel 1 goto :failed
@@ -41,9 +41,11 @@ if errorlevel 1 (
 
 where ffmpeg >nul 2>nul
 if errorlevel 1 (
-  echo [警告] 未找到 FFmpeg；P0 源码测试通过，但 readiness 会保持未就绪。
+  echo [警告] 未找到 FFmpeg；源码测试通过，但 readiness 会保持未就绪。
 ) else (
   ffmpeg -hide_banner -version > "%VERIFY_DIR%\ffmpeg.txt" 2>&1
+  if errorlevel 1 goto :failed
+  "%PY%" tools\ffmpeg_supervisor_smoke.py --duration 2 --output-dir "%VERIFY_DIR%\ffmpeg-smoke"
   if errorlevel 1 goto :failed
 )
 where ffprobe >nul 2>nul
@@ -64,12 +66,12 @@ if errorlevel 1 (
 
 if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P0 完整自检通过 =====
+echo ===== P1A 完整自检通过 =====
 exit /b 0
 
 :failed
 if defined VERIFY_DIR if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P0 自检失败，请查看上方信息 =====
+echo ===== P1A 自检失败，请查看上方信息 =====
 pause
 exit /b 1

@@ -20,6 +20,7 @@ REQUIRED = {
     "docs/GITHUB_WORKFLOW.md",
     "docs/IMPLEMENTATION_WINDOW_PROMPT.md",
     "docs/PRE_IMPLEMENTATION_REVIEW.md",
+    "docs/P1A_IMPLEMENTATION_PLAN.md",
     "docs/architecture/architecture-baseline-v2.0.md",
     "docs/protocol/CAPTURE_RUNBOOK.md",
     "docs/protocol/P0_PROTOCOL_STATUS.md",
@@ -33,6 +34,7 @@ REQUIRED = {
     "tools/backup_runtime.py",
     "tools/douyin_room_preflight.py",
     "tools/douyin_browser_probe.py",
+    "tools/ffmpeg_supervisor_smoke.py",
     "start.bat",
     "update.bat",
     "verify.bat",
@@ -155,7 +157,7 @@ def main() -> int:
             print(f"  - {item}")
         return 1
 
-    print("[通过] 仓库结构、24 章架构、P0 源码、配置、SVG 与秘密边界正常。")
+    print("[通过] 仓库结构、24 章架构、P1A 源码、配置、SVG 与秘密边界正常。")
     return 0
 
 
