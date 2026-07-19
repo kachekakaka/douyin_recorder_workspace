@@ -69,13 +69,20 @@ def _validate_stream_url(url: str) -> None:
     if parsed.scheme not in {"http", "https"} or not host:
         raise RecorderConfigurationError("FFmpeg 输入仅允许 HTTP/HTTPS 流媒体 URL")
     expected_port = 80 if parsed.scheme == "http" else 443
-    if parsed.username is not None or parsed.password is not None or port not in (None, expected_port):
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, expected_port)
+    ):
         raise RecorderConfigurationError("FFmpeg 输入 URL 不得包含凭据或异常端口")
     if _is_ip_literal(host):
         raise RecorderConfigurationError("FFmpeg 输入不允许使用 IP 字面量")
     if host == "localhost" or host.endswith(".local"):
         raise RecorderConfigurationError("FFmpeg 输入拒绝本机或 .local 地址")
-    if not any(host == suffix or host.endswith(f".{suffix}") for suffix in _ALLOWED_STREAM_HOST_SUFFIXES):
+    if not any(
+        host == suffix or host.endswith(f".{suffix}")
+        for suffix in _ALLOWED_STREAM_HOST_SUFFIXES
+    ):
         raise RecorderConfigurationError("FFmpeg 输入不是受信任抖音或字节系 CDN 域名")
 
 
