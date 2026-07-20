@@ -5,6 +5,10 @@ on:
     branches: [feature/p1c-interactive-im-evidence-gate]
     paths:
       - .github/workflows/p1c-evidence-materialize-once.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/p1c-evidence-materialize-once.yml
 
 permissions:
   contents: write
@@ -16,6 +20,10 @@ concurrency:
 jobs:
   materialize:
     name: Materialize verified P1C evidence toolchain
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feature/p1c-interactive-im-evidence-gate'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -41,8 +49,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = "e73a9f7d821dcda1fc022f057cb70ccc48eb8488"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD^)" = "ffd71c11cdd60171ede3ccb6824b58113acaaa34"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1c-evidence-materialize-once.yml"
 
       - name: Reconstruct and verify reviewed source payload
@@ -165,7 +173,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin feature/p1c-interactive-im-evidence-gate
-          test "$(git rev-parse origin/feature/p1c-interactive-im-evidence-gate)" = "$GITHUB_SHA"
+          test "$(git rev-parse origin/feature/p1c-interactive-im-evidence-gate)" = "${{ github.event.pull_request.head.sha }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A -- \
