@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> 当前分支已完成 **P1A：单房间管理、直播流候选解析与 FFmpeg Supervisor 基础** 的工程实现，正在进行最终 PR 审查；完整自动录制、长期轮询与真实 recipient 接线尚未完成。
+> `main` 已合并 **P1A：单房间媒体基础**。当前分支完成 **P1B 第一批：已解码 recipient 事件的事务持久化、严格状态投影与只读审计 API**；真实 IM 自动接入、长期轮询和完整录制闭环仍未完成。
 
 ## 不可改变的业务口径
 
@@ -12,7 +12,7 @@
 WebcastGroupLiveGiftRecipientRecommendMessage
 ```
 
-更新当前推荐收礼人。首条有效事件前、空 recipient、IM 断线及重连后尚未收到新事件时均为 `Unknown`。不使用 OCR、人脸、声纹、礼物、弹幕、连麦成员、昵称或画面位置补全；推荐对象变化不得重启 FFmpeg。
+更新当前推荐收礼人。首条有效事件前为 `Waiting`；空 recipient、IM 断线及重连后尚未收到新有效事件时均为 `Unknown`。不使用 OCR、人脸、声纹、礼物、弹幕、连麦成员、昵称、标题或画面位置补全；推荐对象变化不得重启 FFmpeg 或切断媒体连接。
 
 运行 contract 继续保持：
 
@@ -37,21 +37,32 @@ live_verified=false
 - Windows `start.bat`、`update.bat`、`verify.bat`、`backup.bat`；
 - GitHub Actions 与 Git Bundle/源码 ZIP 恢复验证。
 
-### P1A 当前批次
+### P1A：单房间媒体基础
 
-- `GET/POST/PATCH /api/rooms` 和 `GET /api/rooms/{room_key}`；
-- enable/disable/check actions；
+- 房间 CRUD、enable/disable/check 和单房间读取 API；
 - 抖音号与 `https://live.douyin.com/<id>` 严格规范化；
-- 受限重定向和 SSRF 边界；
+- 受限重定向、SSRF、Host 和浏览器同源写操作边界；
 - 公开直播页 JSON/字符串化 JSON 解析；
-- 应用内 `DouyinStreamResolver`：静态页面优先，缺少候选时执行一次性、受控 Chrome/CDP 网络回退；
-- 私密候选使用最多 32 个房间、120 秒 TTL 的进程内缓存；URL 修改、disable、关闭或过期时清除；
-- FLV/HLS/画质流候选只保留在进程内存；
-- API/SQLite/日志只返回 host、媒体后缀、path/url hash 和 query key，不返回原始流路径；
-- FFmpeg argv、progress、segment CSV 和 RecorderSupervisor 核心；输入层再次执行 CDN allowlist、协议默认端口与安全路径段校验，默认拒绝覆盖已有媒体；
-- 本地 lavfi smoke 工具；
-- SQLite schema v3：`room_checks` 审计、规范化 `room_url` 唯一索引和检查查询索引；
-- 网页新增直播间、启停和立即检查。
+- `DouyinStreamResolver`：静态页面优先，缺少候选时执行一次性 Chrome/CDP 网络回退；
+- 完整签名流 URL 仅存在于有界、带 TTL 的进程内缓存；
+- API/SQLite/日志只返回脱敏流候选元数据；
+- FFmpeg argv、输入二次校验、progress、segment CSV 和 `RecorderSupervisor`；
+- SQLite schema v3 的 `room_checks`、规范化 URL 唯一索引和查询索引；
+- 本地 `lavfi` smoke、Windows 和恢复资产 CI。
+
+### P1B 第一批：recipient 事务投影基础
+
+- SQLite schema v4 recipient/session 审计字段和查询索引；
+- session 开始时创建 `Waiting(waiting_first_event)`；
+- canonical event、dedup、`duplicate_count`、迟到标记和 interval 转换在同一 SQLite 写事务中完成；
+- 空 recipient → `Unknown(empty_recipient)`；
+- IM 断线 → `Unknown(im_disconnected)`；重连本身不会恢复断线前 recipient；
+- 相同 recipient 不重复开启区间；切换 recipient 关闭旧区间并开启新 Active；
+- 跨 `runtime_instance_id` 不比较 monotonic 值；
+- 所有 64 位 ID 在 Python、SQLite 和 JSON 中保持字符串；
+- 房间级只读 recipient state/events/intervals API 不返回 raw payload、extra 或未知字段内容；
+- 同一合成 fixture 同时驱动 reducer replay 与临时 SQLite replay，并验证公开结果一致；
+- Python 3.12/3.13 与 Windows `verify.bat` 均实际执行数据库 replay。
 
 ## 快速开始
 
@@ -79,9 +90,9 @@ python -m app
 http://127.0.0.1:3399/
 ```
 
-P1A 尚未实现管理员认证，配置会拒绝 `0.0.0.0`、局域网和公网绑定。HTTP 层同时拒绝非回环 `Host` 和浏览器跨源写操作，降低本地服务被 DNS rebinding/CSRF 操作的风险。
+尚未实现管理员认证，因此配置会拒绝 `0.0.0.0`、局域网和公网绑定。HTTP 层同时拒绝非回环 `Host` 和浏览器跨源写操作，降低 DNS rebinding/CSRF 风险。
 
-## 房间 API
+## 房间与 recipient API
 
 ```text
 GET   /api/rooms
@@ -91,20 +102,13 @@ PATCH /api/rooms/{room_key}
 POST  /api/rooms/{room_key}/actions/check
 POST  /api/rooms/{room_key}/actions/enable
 POST  /api/rooms/{room_key}/actions/disable
+
+GET   /api/rooms/{room_key}/recipient-state
+GET   /api/rooms/{room_key}/recipient-events
+GET   /api/rooms/{room_key}/recipient-intervals
 ```
 
-创建示例：
-
-```json
-{
-  "room_key": "group-a",
-  "room_url": "73504089679",
-  "quality": "origin",
-  "protocol": "flv"
-}
-```
-
-“立即检查”先执行受限 HTTP 解析；没有候选时才使用一次性 Chrome/CDP 回退。完整签名流 URL 只存在于当前进程内存，API、SQLite、日志和网页仅返回 host、媒体后缀、query key 与 path/url SHA-256。
+recipient API 是只读审计接口。它不会返回 `raw_payload_json`、`extra_json`、`unknown_fields_json`、完整 WSS、Cookie 或真实原始 payload。没有 session 时返回稳定空状态，不猜测当前对象。
 
 ## FFmpeg Supervisor 本地 smoke
 
@@ -128,12 +132,17 @@ Linux/macOS：
 
 ```bash
 python -m pip install -r requirements/dev.lock
+python -m pip check
 python tools/verify_repository_baseline.py
 python tools/verify_source.py
 python -m compileall -q app tests tools
 python -m ruff check --no-cache app tests tools
 python -m pytest -q -p no:cacheprovider --tb=short
+python tools/replay_recipient_fixture.py --quiet
+python tools/replay_recipient_fixture_to_db.py --output userdata/recipient-db-replay.json
 ```
+
+数据库 replay 只接受显式 synthetic fixture；公开报告不包含 raw payload。它验证 schema v4 投影与既有 reducer 的 Waiting/Active/Unknown 结果一致，但不能替代真实现场协议证据。
 
 ## GitHub 与防丢
 
@@ -160,7 +169,11 @@ records/    原始媒体、导出和代理；不进 Git
 3. `docs/architecture/architecture-baseline-v2.0.md`
 4. `docs/P0_IMPLEMENTATION_REPORT.md`
 5. `docs/P1A_IMPLEMENTATION_PLAN.md`
-6. `docs/protocol/P0_PROTOCOL_STATUS.md`
-7. `docs/GITHUB_WORKFLOW.md`
+6. `docs/P1A_IMPLEMENTATION_REPORT.md`
+7. `docs/P1B_IMPLEMENTATION_PLAN.md`
+8. `docs/P1B_IMPLEMENTATION_REPORT.md`
+9. `docs/P1B_TEST_MATRIX.md`
+10. `docs/protocol/P1B_PROTOCOL_EVIDENCE_GATE.md`
+11. `docs/GITHUB_WORKFLOW.md`
 
-架构基线：`v2.0`。P1A 关联 GitHub Issue #3；真实目标消息事实继续由 Issue #1 跟踪。
+架构基线：`v2.0`。P1B 第一批关联 Issue #7；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。
