@@ -1,0 +1,119 @@
+name: P1B final gate once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-gate-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p1b-milestone-publishers
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+      - name: Wait for P1B documentation milestone
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 240); do
+            git fetch origin feature/p1b-single-room-recipient-foundation
+            if git cat-file -e origin/feature/p1b-single-room-recipient-foundation:docs/P1B_TEST_MATRIX.md 2>/dev/null \
+              && git show origin/feature/p1b-single-room-recipient-foundation:.github/workflows/ci.yml \
+                | grep -q 'Verify deterministic recipient database replay'; then
+              git reset --hard origin/feature/p1b-single-room-recipient-foundation
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'P1B documentation/CI milestone was not published' >&2
+          exit 1
+      - name: Install dependencies and FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Execute final P1B gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          python tools/replay_recipient_database.py --output "$RUNNER_TEMP/recipient-db-replay.json"
+          python tools/ffmpeg_supervisor_smoke.py \
+            --duration 2 --output-dir "$RUNNER_TEMP/ffmpeg-smoke"
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find web -type f -name '*.js' -print0)
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          contract = json.loads(Path('app/douyin/contracts/provisional_v1.json').read_text())
+          if contract.get('live_verified') is not False:
+              raise SystemExit('live_verified must remain false')
+          replay = json.loads(Path(__import__('os').environ['RUNNER_TEMP']).joinpath(
+              'recipient-db-replay.json').read_text())
+          if replay.get('schema_version') != 5:
+              raise SystemExit('recipient replay must use schema v5')
+          rendered = json.dumps(replay, sort_keys=True)
+          for forbidden in ('raw_payload', 'extra_json', 'unknown_fields_json'):
+              if forbidden in rendered:
+                  raise SystemExit(f'replay leaked {forbidden}')
+          PY
+      - name: Publish final gate report
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/p1b-gate-once.yml
+          test ! -e .github/workflows/p1b-core-once.yml
+          test ! -e .github/workflows/p1b-api-once.yml
+          test ! -e .github/workflows/p1b-ci-once.yml
+          test ! -e .github/workflows/p1b-docs-once.yml
+          cat > docs/P1B_REMOTE_GATE.md <<EOF
+          # P1B 第一批远端工程门禁
+
+          - gate run: ${GITHUB_RUN_ID}
+          - source head before report: ${GITHUB_SHA}
+          - schema: 5
+          - contract live_verified: false
+          - repository baseline: passed
+          - source boundary: passed
+          - compileall: passed
+          - Ruff: passed
+          - pytest: passed
+          - deterministic reducer replay: passed
+          - deterministic SQLite replay: passed
+          - FFmpeg lavfi smoke: passed
+          - JavaScript syntax: passed
+
+          本报告只证明 P1B 第一批工程语义，不证明真实目标消息已经现场验证。Issue #1 继续作为协议证据门禁。
+          EOF
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'docs: record P1B engineering gate'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
