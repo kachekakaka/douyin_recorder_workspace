@@ -27,6 +27,7 @@ _REQUIRED = (
     "app/douyin/timeline.py",
     "app/douyin/live_page.py",
     "app/douyin/stream_resolver.py",
+    "app/douyin/evidence.py",
     "app/rooms/models.py",
     "app/rooms/repository.py",
     "app/rooms/service.py",
@@ -36,6 +37,8 @@ _REQUIRED = (
     "tools/douyin_room_preflight.py",
     "tools/douyin_browser_probe.py",
     "tools/douyin_network_probe.py",
+    "tools/douyin_interactive_evidence.py",
+    "tools/export_recipient_evidence_fixture.py",
     "tools/ffmpeg_supervisor_smoke.py",
     "tools/create_recovery_assets.py",
     "tools/backup_runtime.py",
@@ -44,6 +47,9 @@ _REQUIRED = (
     "requirements/runtime.lock",
     "requirements/dev.lock",
     "docs/P1A_IMPLEMENTATION_PLAN.md",
+    "docs/P1C_IMPLEMENTATION_PLAN.md",
+    "docs/P1C_IMPLEMENTATION_REPORT.md",
+    "docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md",
     "start.bat",
     "update.bat",
     "verify.bat",
@@ -185,7 +191,7 @@ def main() -> int:
         for item in errors:
             print(f"  - {item}")
         return 1
-    print("[通过] P1A 房间/媒体基础、严格 recipient 语义、依赖锁与安全边界正常。")
+    print("[通过] P1A/P1B/P1C 房间、媒体、recipient 与证据安全边界正常。")
     return 0
 
 
