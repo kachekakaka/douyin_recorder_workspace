@@ -192,7 +192,7 @@ def test_room_crud_and_sanitized_check_api(tmp_path: Path, monkeypatch) -> None:
         status = client.get("/api/status")
         assert status.status_code == 200
         assert status.json()["data"]["phase"] == "P1A"
-        assert status.json()["data"]["schema_version"] == 3
+        assert status.json()["data"]["schema_version"] == 4
 
     with sqlite3.connect(state.settings.paths.database_path) as connection:
         detail_json = connection.execute(
