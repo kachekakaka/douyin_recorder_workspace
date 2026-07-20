@@ -1,0 +1,119 @@
+name: P1B CI publish once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-ci-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p1b-milestone-publishers
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+      - name: Wait for recipient API milestone
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 180); do
+            git fetch origin feature/p1b-single-room-recipient-foundation
+            if git cat-file -e origin/feature/p1b-single-room-recipient-foundation:app/api/recipient.py 2>/dev/null; then
+              git reset --hard origin/feature/p1b-single-room-recipient-foundation
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'recipient API milestone was not published' >&2
+          exit 1
+      - name: Integrate database replay into Linux and Windows verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          ci_path = Path('.github/workflows/ci.yml')
+          ci = ci_path.read_text(encoding='utf-8')
+          if 'Verify deterministic recipient database replay' not in ci:
+              marker = '      - name: Install FFmpeg for supervisor smoke\n'
+              if marker not in ci:
+                  raise SystemExit('FFmpeg CI marker not found')
+              block = '''      - name: Verify deterministic recipient database replay
+        run: |
+          python tools/replay_recipient_database.py \\
+            --output "$RUNNER_TEMP/recipient-database-replay.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "recipient-database-replay.json"
+          report = json.loads(path.read_text(encoding="utf-8"))
+          if report.get("schema_version") != 5:
+              raise SystemExit("recipient database replay schema version mismatch")
+          if report.get("contract_live_verified") is not False:
+              raise SystemExit("recipient replay must keep live_verified=false")
+          rendered = json.dumps(report, sort_keys=True)
+          for forbidden in ("raw_payload", "extra_json", "unknown_fields_json"):
+              if forbidden in rendered:
+                  raise SystemExit(f"recipient database replay leaked {forbidden}")
+          PY
+
+'''
+              ci = ci.replace(marker, block + marker, 1)
+              ci_path.write_text(ci, encoding='utf-8')
+
+          bat_path = Path('verify.bat')
+          data = bat_path.read_text(encoding='utf-8-sig')
+          if 'replay_recipient_database.py' not in data:
+              marker = 'echo Verification passed.'
+              if marker not in data:
+                  marker = 'exit /b 0'
+              if marker not in data:
+                  raise SystemExit('Windows verification completion marker not found')
+              block = '''set "RECIPIENT_DB_REPLAY=%TEMP%\\douyin-recipient-db-replay-%RANDOM%-%RANDOM%.json"
+python tools\\replay_recipient_database.py --output "%RECIPIENT_DB_REPLAY%"
+if errorlevel 1 exit /b 1
+del /q "%RECIPIENT_DB_REPLAY%" >nul 2>nul
+
+'''
+              data = data.replace(marker, block + marker, 1)
+              bat_path.write_text(data, encoding='utf-8-sig', newline='')
+          PY
+      - name: Validate and publish CI milestone
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/p1b-ci-once.yml
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          python tools/replay_recipient_database.py --output "$RUNNER_TEMP/recipient-db-replay.json"
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'test: run recipient database replay in CI'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
