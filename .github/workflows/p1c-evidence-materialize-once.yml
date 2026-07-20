@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "9544fb5db9411e77693ebd379e554d6a4938c974"
+          test "$(git rev-parse HEAD^)" = "b061543f8178d35492c0409e8b10600dcf9a1767"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1c-evidence-materialize-once.yml"
 
       - name: Reconstruct and verify reviewed source payload
@@ -168,7 +168,7 @@ jobs:
             --duration 2 \
             --output-dir "$RUNNER_TEMP/p1c-ffmpeg-smoke"
 
-      - name: Commit and push verified P1C implementation
+      - name: Stage and commit verified P1C implementation
         shell: bash
         run: |
           set -euo pipefail
@@ -207,6 +207,7 @@ jobs:
               "tools/export_recipient_evidence_fixture.py",
               "tools/verify_source.py",
           }
+          print("staged paths:", sorted(actual))
           if actual != expected:
               raise SystemExit(
                   f"staged path mismatch: missing={sorted(expected-actual)} "
@@ -216,5 +217,12 @@ jobs:
           git diff --cached --check
           git status --short
           git commit -m "feat: add private interactive Douyin IM evidence gate"
+          test -z "$(git status --short)"
+          git rev-parse HEAD
+
+      - name: Push verified P1C implementation
+        shell: bash
+        run: |
+          set -euo pipefail
           git push origin "HEAD:feature/p1c-interactive-im-evidence-gate"
           git rev-parse HEAD
