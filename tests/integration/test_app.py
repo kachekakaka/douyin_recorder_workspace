@@ -84,7 +84,7 @@ def test_fastapi_health_readiness_status_and_static_page(
         status = client.get("/api/status")
         assert status.status_code == 200
         payload = status.json()["data"]
-        assert payload["phase"] == "P1A"
+        assert payload["phase"] == "P1B"
         assert payload["loopback_only"] is True
         assert payload["protocol_live_verified"] is False
 
