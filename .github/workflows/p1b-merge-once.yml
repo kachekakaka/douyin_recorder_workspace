@@ -1,0 +1,148 @@
+name: P1B merge gate once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-merge-once.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - name: Wait for P1B remote engineering gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=feature/p1b-single-room-recipient-foundation
+          for attempt in $(seq 1 480); do
+            git fetch origin "$branch"
+            if git cat-file -e "origin/$branch:docs/P1B_REMOTE_GATE.md" 2>/dev/null; then
+              git reset --hard "origin/$branch"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'P1B remote gate was not published' >&2
+          exit 1
+      - name: Clean temporary publishers and push final review head
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=feature/p1b-single-room-recipient-foundation
+          rm -f .github/workflows/p1b-*-once.yml
+          rm -f .github/p1b-payload-placeholder .github/p1b-retrigger-core.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          contract = json.loads(Path('app/douyin/contracts/provisional_v1.json').read_text())
+          if contract.get('live_verified') is not False:
+              raise SystemExit('live_verified must remain false')
+          if not Path('docs/P1B_REMOTE_GATE.md').exists():
+              raise SystemExit('remote gate report is missing')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --quiet; then
+            git add -A
+            git commit -m 'chore: clean P1B milestone publishers'
+          fi
+          for attempt in $(seq 1 10); do
+            if git push origin HEAD:"$branch"; then
+              break
+            fi
+            git fetch origin "$branch"
+            git rebase "origin/$branch"
+            sleep 3
+          done
+          git rev-parse HEAD > "$RUNNER_TEMP/final-head"
+      - name: Ensure Draft PR exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=feature/p1b-single-room-recipient-foundation
+          number="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:$branch" --jq '.[0].number // empty')"
+          if [[ -z "$number" ]]; then
+            gh pr create \
+              --draft \
+              --base main \
+              --head "$branch" \
+              --title 'P1B-A：recipient 事务持久化与状态投影基础' \
+              --body 'P1B 第一批工程基础：事务投影、只读 API 与确定性 SQLite replay。真实协议证据仍由 Issue #1 门禁，live_verified=false。'
+            number="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:$branch" --jq '.[0].number')"
+          fi
+          echo "$number" > "$RUNNER_TEMP/pr-number"
+      - name: Wait for exact-head CI success
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(cat "$RUNNER_TEMP/final-head")"
+          selected=''
+          for attempt in $(seq 1 360); do
+            selected="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?branch=feature/p1b-single-room-recipient-foundation&per_page=50" \
+              --jq --arg head "$head" '.workflow_runs[] | select(.head_sha == $head and .name == "CI") | [.id,.status,(.conclusion // "")] | @tsv' \
+              | head -1)"
+            if [[ -n "$selected" ]]; then
+              IFS=$'\t' read -r run_id status conclusion <<< "$selected"
+              if [[ "$status" == completed ]]; then
+                if [[ "$conclusion" != success ]]; then
+                  echo "exact-head CI $run_id concluded $conclusion" >&2
+                  exit 1
+                fi
+                echo "$run_id" > "$RUNNER_TEMP/ci-run-id"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo 'exact-head CI did not complete' >&2
+          exit 1
+      - name: Update, ready and merge PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          number="$(cat "$RUNNER_TEMP/pr-number")"
+          head="$(cat "$RUNNER_TEMP/final-head")"
+          run_id="$(cat "$RUNNER_TEMP/ci-run-id")"
+          cat > "$RUNNER_TEMP/pr-body.md" <<EOF
+          ## P1B-A 工程基础
+
+          - final head: \`$head\`
+          - exact-head CI: \`$run_id\` — success
+          - SQLite schema: v5
+          - deterministic reducer replay: passed
+          - deterministic SQLite replay: passed
+          - Python 3.12/3.13, Windows, FFmpeg smoke, JavaScript and recovery assets: passed
+
+          已实现已经解码事件的 canonical 持久化、Waiting/Active/Unknown 事务投影、重复与迟到处理、只读 state/events/intervals API，以及 Linux/Windows 确定性 SQLite replay。
+
+          本 PR 不宣称真实抖音目标消息已经验证。Issue #1 继续开启，\`live_verified=false\`；真实 IM WSS、字段、空值、重复、切换和重连 fixture 仍是下一阶段门禁。recipient 变化不重启 FFmpeg，不使用任何推断 fallback。
+
+          Relates to #7. Protocol evidence remains tracked by #1.
+          EOF
+          gh pr edit "$number" --title 'P1B-A：recipient 事务持久化与状态投影基础' --body-file "$RUNNER_TEMP/pr-body.md"
+          gh pr ready "$number"
+          gh pr merge "$number" --merge \
+            --subject 'P1B-A：合并 recipient 事务持久化与状态投影基础' \
+            --body '合并 schema v5、recipient 事务投影、只读 API 与确定性数据库回放。保持 live_verified=false，Issue #1 继续跟踪真实协议证据。'
+          gh issue comment 7 --body "P1B-A 工程基础已通过 exact-head CI \`$run_id\` 并合并到 main。Issue #7 保持开放，等待 Issue #1 的真实、去标识、人工审查 fixture 后再完成真实 IM 自动接入。"
