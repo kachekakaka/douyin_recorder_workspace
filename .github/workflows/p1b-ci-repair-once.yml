@@ -1,0 +1,57 @@
+name: Repair staged P1B CI publisher once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-ci-repair-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p1b-publisher-repairs
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - name: Patch CI publisher and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin feature/p1b-single-room-recipient-foundation
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/p1b-ci-once.yml')
+          text = path.read_text(encoding='utf-8')
+          opening = "          python - <<'PY'\n          from pathlib import Path\n"
+          if opening not in text:
+              raise SystemExit('CI publisher outer heredoc opening not found')
+          text = text.replace(
+              opening,
+              "          python - <<'PYOUTER'\n          from pathlib import Path\n",
+              1,
+          )
+          closing = "          PY\n      - name: Validate and publish CI milestone\n"
+          if closing not in text:
+              raise SystemExit('CI publisher outer heredoc closing not found')
+          text = text.replace(
+              closing,
+              "          PYOUTER\n      - name: Validate and publish CI milestone\n",
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/p1b-ci-repair-once.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: repair P1B CI publisher heredoc'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
