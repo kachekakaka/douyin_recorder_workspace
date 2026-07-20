@@ -1,0 +1,158 @@
+name: Review P1B headed evidence after merge
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-evidence-review-once.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait for evidence branch and workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=feature/p1b-protocol-evidence
+          for attempt in $(seq 1 480); do
+            git fetch origin "$branch" 2>/dev/null || true
+            if git cat-file -e "origin/$branch:.github/workflows/protocol-evidence.yml" 2>/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'protocol evidence branch was not created' >&2
+          exit 1
+      - name: Dispatch and wait for three-room evidence matrix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=feature/p1b-protocol-evidence
+          started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run protocol-evidence.yml \
+            --ref "$branch" \
+            -f room_ids_json='["79907888978","94771623313","40727638291"]' \
+            -f duration_seconds='180'
+          run_id=''
+          for attempt in $(seq 1 120); do
+            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/protocol-evidence.yml/runs?branch=$branch&event=workflow_dispatch&per_page=20" \
+              --jq --arg started "$started" '[.workflow_runs[] | select(.created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+            [[ -n "$run_id" ]] && break
+            sleep 3
+          done
+          [[ -n "$run_id" ]] || { echo 'evidence run not found' >&2; exit 1; }
+          echo "$run_id" > "$RUNNER_TEMP/evidence-run-id"
+          for attempt in $(seq 1 360); do
+            status="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .status)"
+            if [[ "$status" == completed ]]; then
+              conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .conclusion)"
+              [[ "$conclusion" == success ]] || { echo "evidence run concluded $conclusion" >&2; exit 1; }
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'evidence run timed out' >&2
+          exit 1
+      - name: Download and sanitize result summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="$(cat "$RUNNER_TEMP/evidence-run-id")"
+          mkdir -p "$RUNNER_TEMP/evidence"
+          gh run download "$run_id" --dir "$RUNNER_TEMP/evidence"
+          EVIDENCE_ROOT="$RUNNER_TEMP/evidence" RUN_ID="$run_id" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['EVIDENCE_ROOT'])
+          rows = []
+          total_targets = 0
+          for path in sorted(root.rglob('headed-browser-probe.json')):
+              report = json.loads(path.read_text(encoding='utf-8'))
+              room = str(report.get('room_id', 'unknown'))
+              websocket_count = int(report.get('websocket_count', 0) or 0)
+              binary_count = int(report.get('binary_frame_count', 0) or 0)
+              target_count = int(report.get('target_message_count', 0) or 0)
+              total_targets += target_count
+              if report.get('browser_started') is not True or report.get('page_loaded') is not True:
+                  status = 'browser-or-page-failed'
+              elif target_count:
+                  status = 'target-observed-needs-human-review'
+              elif websocket_count:
+                  status = 'transport-observed-target-not-observed'
+              else:
+                  status = 'no-transport-observed-unknown'
+              rendered = json.dumps(report, sort_keys=True).casefold()
+              for forbidden in ('cookie', 'authorization', 'ttwid=', 'wssecret=', 'wss://'):
+                  if forbidden in rendered:
+                      raise SystemExit(f'artifact leaked {forbidden}')
+              rows.append((room, websocket_count, binary_count, target_count, status))
+          expected = {'79907888978', '94771623313', '40727638291'}
+          if {row[0] for row in rows} != expected:
+              raise SystemExit(f'unexpected room result set: {rows}')
+          lines = [
+              '# P1B-B headed Chrome 现场证据状态',
+              '',
+              f'- GitHub Actions run: `{os.environ["RUN_ID"]}`',
+              '- 模式：无登录、被动、Xvfb 中的普通 Chrome/CDP',
+              '- contract：`live_verified=false`',
+              '',
+              '| 房间 | WebSocket | binary frame | 目标消息 | 结论 |',
+              '|---|---:|---:|---:|---|',
+          ]
+          for row in rows:
+              lines.append(f'| `{row[0]}` | {row[1]} | {row[2]} | {row[3]} | {row[4]} |')
+          lines.extend([
+              '',
+              '该结果不包含 Cookie、完整 WSS、raw frame、真实 payload 或 recipient 明文。',
+              '',
+              ('观察到目标 method，但仍必须先完成去标识人工审查和可回放 fixture；本次不自动修改 contract。'
+               if total_targets else
+               '本次没有形成可解除门禁的目标消息证据；一次未观察到不能解释为永久不支持。'),
+              '',
+          ])
+          Path(os.environ['RUNNER_TEMP']).joinpath('P1B_LIVE_EVIDENCE_STATUS.md').write_text(
+              '\n'.join(lines), encoding='utf-8')
+          Path(os.environ['RUNNER_TEMP']).joinpath('evidence-summary.json').write_text(
+              json.dumps({'run_id': int(os.environ['RUN_ID']), 'rows': rows,
+                          'target_total': total_targets}, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8')
+          PY
+      - name: Commit status to evidence branch and update Issue 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=feature/p1b-protocol-evidence
+          git switch -C "$branch" "origin/$branch"
+          cp "$RUNNER_TEMP/P1B_LIVE_EVIDENCE_STATUS.md" docs/protocol/P1B_LIVE_EVIDENCE_STATUS.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/protocol/P1B_LIVE_EVIDENCE_STATUS.md
+          git commit -m 'docs: record headed protocol evidence result'
+          git push origin "$branch"
+          run_id="$(cat "$RUNNER_TEMP/evidence-run-id")"
+          gh issue comment 1 --body-file "$RUNNER_TEMP/P1B_LIVE_EVIDENCE_STATUS.md"
+          number="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:$branch" --jq '.[0].number // empty')"
+          if [[ -n "$number" ]]; then
+            gh pr comment "$number" --body "Headed protocol evidence run \`$run_id\` completed. See \`docs/protocol/P1B_LIVE_EVIDENCE_STATUS.md\`. Contract remains \`live_verified=false\`."
+          fi
