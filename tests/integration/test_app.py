@@ -78,7 +78,7 @@ def test_fastapi_health_readiness_status_and_static_page(
 
         ready = client.get("/readyz")
         assert ready.status_code == 200
-        assert ready.json()["data"]["schema_version"] == 3
+        assert ready.json()["data"]["schema_version"] == 4
         assert ready.json()["data"]["ffmpeg"]["ready"] is True
 
         status = client.get("/api/status")
