@@ -1,0 +1,49 @@
+name: Repair staged P1B API publisher once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-api-repair-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p1b-publisher-repairs
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - name: Patch API publisher and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin feature/p1b-single-room-recipient-foundation
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/p1b-api-once.yml')
+          text = path.read_text(encoding='utf-8')
+          marker = "          python -m pip install -r requirements/dev.lock\n          python -m pip check\n"
+          replacement = """          python -m pip install -r requirements/dev.lock
+          python -m ruff format app/api/recipient.py app/state.py app/main.py tests/unit/test_recipient_api_routes.py
+          python -m pip check
+"""
+          if marker not in text:
+              raise SystemExit('API dependency validation marker not found')
+          text = text.replace(marker, replacement, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/p1b-api-repair-once.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: harden P1B API publisher validation'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
