@@ -1,0 +1,64 @@
+name: Repair staged P1B core publisher once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-core-repair-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - name: Patch publisher and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin feature/p1b-single-room-recipient-foundation
+          python - <<'PYFIX'
+          from pathlib import Path
+
+          path = Path('.github/workflows/p1b-core-once.yml')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'room_key TEXT NOT NULL REFERENCES rooms(room_key) ON DELETE RESTRICT,',
+              'room_key TEXT NOT NULL,',
+          )
+          marker = "          rm .github/workflows/p1b-core-once.yml\n          python -m pip install --upgrade pip\n"
+          if marker not in text:
+              raise SystemExit('core validation marker not found')
+          replacement = """          rm .github/workflows/p1b-core-once.yml
+          python - <<'PYTESTFIX'
+          from pathlib import Path
+          test = Path('tests/unit/test_database_and_settings.py')
+          value = test.read_text(encoding='utf-8')
+          value = value.replace('schema_version() == 4', 'schema_version() == 5')
+          test.write_text(value, encoding='utf-8')
+          PYTESTFIX
+          python -m pip install --upgrade pip
+"""
+          text = text.replace(marker, replacement, 1)
+          marker = "          python -m pip install -r requirements/dev.lock\n          python -m pip check\n"
+          replacement = """          python -m pip install -r requirements/dev.lock
+          python -m ruff format app/recipients tests/unit/test_recipient_projection.py tests/unit/test_recipient_database_replay.py tools/replay_recipient_database.py
+          python -m pip check
+"""
+          if marker not in text:
+              raise SystemExit('dependency validation marker not found')
+          text = text.replace(marker, replacement, 1)
+          path.write_text(text, encoding='utf-8')
+          PYFIX
+          rm .github/workflows/p1b-core-repair-once.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: repair P1B core publisher validation'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
