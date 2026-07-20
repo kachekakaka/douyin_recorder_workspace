@@ -1,8 +1,23 @@
 # P1C 实施报告：交互式浏览器 IM 证据采集与去标识门禁
 
-状态：**工程实现完成，等待远端 PR CI 与 Review；真实目标消息仍未现场验证，`live_verified=false`。**  
+状态：**工程实现完成，等待最终标准 CI 与 PR Review；真实目标消息仍未现场验证，`live_verified=false`。**  
 关联：Issue #9、协议事实 Issue #1  
 分支：`feature/p1c-interactive-im-evidence-gate`
+
+## 远端实现里程碑
+
+```text
+568ea69ff36365b7a854c9f1a1843eec84d7bbfa
+feat: add private interactive Douyin IM evidence gate
+```
+
+经校验的一次性组装 run：
+
+```text
+29721637122  P1C materialize evidence toolchain once  success
+```
+
+该 run 校验了 tar SHA-256、精确成员清单、每个最终 Git blob SHA，并通过 locked dependencies、repository baseline、source boundary、compileall、Ruff、58 项 pytest、deterministic recipient replay、JavaScript syntax 和 FFmpeg Supervisor smoke。一次性 workflow 已从最终功能树删除。
 
 ## 已实现
 
@@ -12,6 +27,7 @@
 - WSS 仅接受默认 TLS 端口、无凭据、`douyin.com` allowlist；
 - public report 仅保留 host、path/url SHA-256、query key、method 计数和去标识字段统计；
 - DevTools endpoint 只接受 `http://127.0.0.1:<port>` 或 `http://[::1]:<port>`；
+- DevTools HTTP 禁止重定向，并绕过环境代理访问回环端点；
 - 精确选择授权 `https://live.douyin.com/<id>` page target；
 - 被动观察 WSS 和二进制 frame，不读取 Cookie storage，不发送 ACK/heartbeat/互动；
 - approval manifest、contract SHA 和 payload SHA 全匹配后，才导出去标识 candidate fixture；
@@ -20,7 +36,7 @@
 
 ## 安全结论
 
-完整 WSS、query value、raw frame、target payload 和 recipient 明文不会进入 public report、日志、Issue、PR 或 Actions artifact。私人 evidence 目录由 `.gitignore` 排除，工具拒绝仓库内非批准目录。
+完整 WSS、query value、raw frame、target payload 和 recipient 明文不会进入 public report、日志、Issue、PR 或 Actions artifact。私人 evidence 目录由 `.gitignore` 排除，工具拒绝仓库内非批准目录及符号链接路径。
 
 ## 仍未解决
 
@@ -29,4 +45,4 @@
 - 当前字段号、空 recipient、open ID、重复、切换、重连、reason 和延迟分布；
 - 经人工审查、可公开提交的最小真实 fixture。
 
-因此 provisional contract 不变，Issue #1 继续开启。P1C 工具链完成不等于真实 recipient 自动接入完成。
+因此 provisional contract 不变，Issue #1 继续开启。P1C 工具链完成不等于真实 recipient 自动接入完成。最终 PR 结论以本提交对应的标准 GitHub Actions 为准。
