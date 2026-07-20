@@ -12,6 +12,7 @@ from app.douyin.recipient import RecipientContract
 from app.douyin.stream_resolver import DouyinStreamResolver
 from app.rooms import RoomRepository, RoomService
 from app.runtime import ToolStatus, check_tool
+from app.sessions import RecipientSessionRepository, RecipientSessionService
 from app.settings import Settings
 
 
@@ -22,6 +23,8 @@ class AppState:
     protocol_contract: RecipientContract
     room_repository: RoomRepository
     room_service: RoomService
+    recipient_repository: RecipientSessionRepository
+    recipient_service: RecipientSessionService
     runtime_instance_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     ffmpeg: ToolStatus | None = None
@@ -42,12 +45,16 @@ class AppState:
             live_page_client or DouyinLivePageClient()
         )
         room_service = RoomService(room_repository, resolver)
+        recipient_repository = RecipientSessionRepository(database)
+        recipient_service = RecipientSessionService(recipient_repository, contract)
         return cls(
             settings=settings,
             database=database,
             protocol_contract=contract,
             room_repository=room_repository,
             room_service=room_service,
+            recipient_repository=recipient_repository,
+            recipient_service=recipient_service,
         )
 
     async def start(self) -> None:

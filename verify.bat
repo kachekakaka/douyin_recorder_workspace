@@ -4,7 +4,7 @@ setlocal EnableExtensions
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
-title douyin_recorder_workspace P1A - 完整自检
+title douyin_recorder_workspace P1B - 完整自检
 
 call scripts\windows\prepare-python.bat dev
 if errorlevel 1 goto :failed
@@ -28,6 +28,10 @@ mkdir "%VERIFY_DIR%" >nul 2>nul
 if errorlevel 1 goto :failed
 "%PY%" -c "import json,pathlib,sys; a=json.loads(pathlib.Path(r'%VERIFY_DIR%\replay.json').read_text(encoding='utf-8')); b=json.loads(pathlib.Path(r'docs\protocol\P0_SYNTHETIC_REPLAY_REPORT.json').read_text(encoding='utf-8')); sys.exit(0 if a==b else 1)"
 if errorlevel 1 goto :failed
+"%PY%" tools\replay_recipient_fixture_to_db.py --output "%VERIFY_DIR%\recipient-database-replay.json"
+if errorlevel 1 goto :failed
+"%PY%" -c "import json,pathlib,sys; r=json.loads(pathlib.Path(r'%VERIFY_DIR%\recipient-database-replay.json').read_text(encoding='utf-8')); ok=r.get('schema_version')==4 and r.get('contract_live_verified') is False and r.get('summary')=={'target_messages':7,'unique_event_count':6,'duplicate_frame_count':1,'late_event_count':1,'interval_count':7}; s=json.dumps(r,sort_keys=True); ok=ok and all(x not in s for x in ('raw_payload_json','extra_json','unknown_fields_json','frame_base64')); sys.exit(0 if ok else 1)"
+if errorlevel 1 goto :failed
 
 where node >nul 2>nul
 if errorlevel 1 (
@@ -50,7 +54,7 @@ if errorlevel 1 (
 )
 where ffprobe >nul 2>nul
 if errorlevel 1 (
-  echo [警告] 未找到 ffprobe；P0 源码测试通过，但 readiness 会保持未就绪。
+  echo [警告] 未找到 ffprobe；源码测试通过，但 readiness 会保持未就绪。
 ) else (
   ffprobe -hide_banner -version > "%VERIFY_DIR%\ffprobe.txt" 2>&1
   if errorlevel 1 goto :failed
@@ -66,12 +70,12 @@ if errorlevel 1 (
 
 if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P1A 完整自检通过 =====
+echo ===== P1B 完整自检通过 =====
 exit /b 0
 
 :failed
 if defined VERIFY_DIR if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P1A 自检失败，请查看上方信息 =====
+echo ===== P1B 自检失败，请查看上方信息 =====
 pause
 exit /b 1

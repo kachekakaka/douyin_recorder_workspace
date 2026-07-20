@@ -85,6 +85,41 @@ jobs:
               raise SystemExit("deterministic replay report differs from committed baseline")
           PY
 
+      - name: Verify deterministic recipient database replay
+        run: |
+          python tools/replay_recipient_fixture_to_db.py \
+            --output "$RUNNER_TEMP/recipient-database-replay.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "recipient-database-replay.json"
+          report = json.loads(path.read_text(encoding="utf-8"))
+          expected_summary = {
+              "target_messages": 7,
+              "unique_event_count": 6,
+              "duplicate_frame_count": 1,
+              "late_event_count": 1,
+              "interval_count": 7,
+          }
+          if report.get("schema_version") != 4:
+              raise SystemExit("recipient database replay schema mismatch")
+          if report.get("contract_live_verified") is not False:
+              raise SystemExit("recipient database replay changed live_verified")
+          if report.get("summary") != expected_summary:
+              raise SystemExit("recipient database replay summary mismatch")
+          rendered = json.dumps(report, sort_keys=True)
+          for forbidden in (
+              "raw_payload_json",
+              "extra_json",
+              "unknown_fields_json",
+              "frame_base64",
+          ):
+              if forbidden in rendered:
+                  raise SystemExit(f"recipient database replay leaked {forbidden}")
+          PY
+
       - name: Install FFmpeg for supervisor smoke
         if: matrix.python-version == '3.12'
         run: |

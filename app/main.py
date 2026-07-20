@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import rooms_router
+from app.api import recipient_router, rooms_router
 from app.paths import ROOT
 from app.security import validate_request_boundary
 from app.settings import Settings
@@ -37,6 +37,7 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
     )
     app.state.app_state = app_state
     app.include_router(rooms_router)
+    app.include_router(recipient_router)
 
     @app.middleware("http")
     async def security_boundary_and_headers(request: Request, call_next):
@@ -85,14 +86,14 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
             "ok": True,
             "data": {
                 "version": __version__,
-                "phase": "P1A",
+                "phase": "P1B",
                 "loopback_only": True,
                 "authentication_implemented": False,
                 "protocol_live_verified": app_state.protocol_contract.live_verified,
                 "limitations": [
                     "目标推荐收礼人消息仍未形成经审查的现场 fixture",
-                    "P1A 只启动房间管理、直播页/流候选解析与 FFmpeg Supervisor 基础",
-                    "完整自动录制与 recipient 入库闭环尚未启用",
+                    "P1B 只持久化已解码目标事件并投影 Waiting/Active/Unknown",
+                    "真实 IM 自动接入与完整自动录制闭环尚未启用",
                 ],
                 **data,
             },
