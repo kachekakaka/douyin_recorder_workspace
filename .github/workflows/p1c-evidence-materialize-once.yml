@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "ffd71c11cdd60171ede3ccb6824b58113acaaa34"
+          test "$(git rev-parse HEAD^)" = "9544fb5db9411e77693ebd379e554d6a4938c974"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1c-evidence-materialize-once.yml"
 
       - name: Reconstruct and verify reviewed source payload
@@ -187,23 +187,34 @@ jobs:
             tools/douyin_interactive_evidence.py \
             tools/export_recipient_evidence_fixture.py \
             tools/verify_source.py
-          mapfile -t staged < <(git diff --cached --name-only)
-          expected=(
-            .github/workflows/p1c-evidence-materialize-once.yml
-            README.md
-            app/douyin/evidence.py
-            docs/GITHUB_WORKFLOW.md
-            docs/P1C_IMPLEMENTATION_REPORT.md
-            docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md
-            tests/unit/test_recipient_evidence.py
-            tools/douyin_interactive_evidence.py
-            tools/export_recipient_evidence_fixture.py
-            tools/verify_source.py
+          python - <<'PY'
+          import subprocess
+
+          actual = set(
+              subprocess.check_output(
+                  ["git", "diff", "--cached", "--name-only"], text=True
+              ).splitlines()
           )
-          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
-          test "${staged[*]}" = "${expected_sorted[*]}"
+          expected = {
+              ".github/workflows/p1c-evidence-materialize-once.yml",
+              "README.md",
+              "app/douyin/evidence.py",
+              "docs/GITHUB_WORKFLOW.md",
+              "docs/P1C_IMPLEMENTATION_REPORT.md",
+              "docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md",
+              "tests/unit/test_recipient_evidence.py",
+              "tools/douyin_interactive_evidence.py",
+              "tools/export_recipient_evidence_fixture.py",
+              "tools/verify_source.py",
+          }
+          if actual != expected:
+              raise SystemExit(
+                  f"staged path mismatch: missing={sorted(expected-actual)} "
+                  f"unexpected={sorted(actual-expected)}"
+              )
+          PY
           git diff --cached --check
+          git status --short
           git commit -m "feat: add private interactive Douyin IM evidence gate"
-          test -z "$(git status --short)"
           git push origin "HEAD:feature/p1c-interactive-im-evidence-gate"
           git rev-parse HEAD
