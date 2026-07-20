@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> `main` 已合并 **P1A：单房间媒体基础**。当前分支完成 **P1B 第一批：已解码 recipient 事件的事务持久化、严格状态投影与只读审计 API**；真实 IM 自动接入、长期轮询和完整录制闭环仍未完成。
+> `main` 已合并 P1A 与 P1B 事务投影基础。当前分支完成 **P1C：普通交互 Chrome 的私人 IM 证据采集与人工去标识门禁**；真实目标消息、长期自动录制和完整交付仍未验证。
 
 ## 不可改变的业务口径
 
@@ -63,6 +63,22 @@ live_verified=false
 - 房间级只读 recipient state/events/intervals API 不返回 raw payload、extra 或未知字段内容；
 - 同一合成 fixture 同时驱动 reducer replay 与临时 SQLite replay，并验证公开结果一致；
 - Python 3.12/3.13 与 Windows `verify.bat` 均实际执行数据库 replay。
+
+### P1C：交互式 IM 证据工具链
+
+- 只附加到用户主动启动的回环 Chrome DevTools；
+- 精确匹配一个授权 `live.douyin.com/<id>` page target；
+- 被动观察 allowlist WSS 与 binary frame；
+- raw frame、target payload 和 manifest 只写 Git 忽略的私人目录；
+- public report 不包含 Cookie、完整 WSS、query value、raw payload 或 recipient 明文；
+- approval/hash/contract 全匹配后才导出去标识 candidate fixture；
+- fixture 保持 `human_reviewed=true`、`live_verified=false`。
+
+现场命令和人工审批流程见：
+
+```text
+docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md
+```
 
 ## 快速开始
 
@@ -140,6 +156,8 @@ python -m ruff check --no-cache app tests tools
 python -m pytest -q -p no:cacheprovider --tb=short
 python tools/replay_recipient_fixture.py --quiet
 python tools/replay_recipient_fixture_to_db.py --output userdata/recipient-db-replay.json
+python tools/douyin_interactive_evidence.py --help
+python tools/export_recipient_evidence_fixture.py --help
 ```
 
 数据库 replay 只接受显式 synthetic fixture；公开报告不包含 raw payload。它验证 schema v4 投影与既有 reducer 的 Waiting/Active/Unknown 结果一致，但不能替代真实现场协议证据。
@@ -174,6 +192,9 @@ records/    原始媒体、导出和代理；不进 Git
 8. `docs/P1B_IMPLEMENTATION_REPORT.md`
 9. `docs/P1B_TEST_MATRIX.md`
 10. `docs/protocol/P1B_PROTOCOL_EVIDENCE_GATE.md`
-11. `docs/GITHUB_WORKFLOW.md`
+11. `docs/P1C_IMPLEMENTATION_PLAN.md`
+12. `docs/P1C_IMPLEMENTATION_REPORT.md`
+13. `docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md`
+14. `docs/GITHUB_WORKFLOW.md`
 
-架构基线：`v2.0`。P1B 第一批关联 Issue #7；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。
+架构基线：`v2.0`。P1C 工具链关联 Issue #9；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。
