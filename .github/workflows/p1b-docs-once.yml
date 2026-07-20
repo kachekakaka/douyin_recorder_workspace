@@ -1,0 +1,283 @@
+name: P1B docs publish once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-docs-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p1b-milestone-publishers
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+      - name: Wait for CI replay milestone
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 180); do
+            git fetch origin feature/p1b-single-room-recipient-foundation
+            if git show origin/feature/p1b-single-room-recipient-foundation:.github/workflows/ci.yml 2>/dev/null \
+              | grep -q 'Verify deterministic recipient database replay'; then
+              git reset --hard origin/feature/p1b-single-room-recipient-foundation
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'recipient CI milestone was not published' >&2
+          exit 1
+      - name: Materialize P1B documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > docs/P1B_IMPLEMENTATION_REPORT.md <<'DOC'
+          # P1B 第一批实施报告：单房间 recipient 事务投影
+
+          状态：**工程实现完成，等待 Draft PR 的最终远端 CI 与 Review；真实目标消息仍未现场验证。**
+
+          关联：Issue #7；协议事实门禁 Issue #1  
+          分支：`feature/p1b-single-room-recipient-foundation`
+
+          ## 已交付范围
+
+          - SQLite schema v5 recipient projection 表、唯一约束和查询索引；
+          - `DecodedRecipientEvent` 的严格目标 method 与 64 位字符串 ID 边界；
+          - canonical event 去重、重复计数、迟到标记；
+          - Waiting、Active、Unknown interval 与 event 的单房间串行事务投影；
+          - 空 recipient → `Unknown(empty_recipient)`；
+          - IM 断线 → `Unknown(im_disconnected)`；
+          - 重连本身不恢复旧 recipient，直到新有效事件；
+          - 跨 `runtime_instance_id` 的 monotonic 值不直接比较；
+          - session 结束关闭开放 interval；
+          - 三个只读 recipient API；
+          - 合成事件到临时 SQLite 的确定性 replay；
+          - Linux、Windows 与 GitHub Actions 自动验证。
+
+          ## 只读 API
+
+          ```text
+          GET /api/rooms/{room_key}/recipient/state
+          GET /api/rooms/{room_key}/recipient/events
+          GET /api/rooms/{room_key}/recipient/intervals
+          ```
+
+          API 只返回 canonical 审计元数据和 interval，不返回：
+
+          ```text
+          raw_payload_json
+          extra_json
+          unknown_fields_json
+          完整真实 payload
+          Cookie
+          完整 WSS URL
+          ```
+
+          ## 状态语义
+
+          ```text
+          session start               -> Waiting
+          first valid recipient A     -> Active(A)
+          duplicate A                 -> duplicate_count + 1, no interval change
+          valid recipient B           -> close A, open Active(B)
+          empty recipient             -> Unknown(empty_recipient)
+          IM disconnect               -> Unknown(im_disconnected)
+          reconnect                   -> remain Unknown
+          next valid recipient C      -> Active(C)
+          late event                  -> persist is_late=1, do not roll state back
+          session end                 -> close open interval and session
+          ```
+
+          recipient 切换不调用或重启 FFmpeg，也不切断媒体连接。
+
+          ## 自动验收
+
+          ```bash
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          python tools/replay_recipient_database.py --output <临时输出>
+          find web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          ```
+
+          Windows `verify.bat` 和 GitHub Actions 同样执行确定性 SQLite replay。
+
+          ## 真实协议门禁
+
+          本批只消费已经解码且符合显式 contract 的事件。它没有证明真实抖音房间已经下发目标消息。
+
+          在 Issue #1 形成经去标识、人工审查、可回放的现场 fixture 前：
+
+          - `app/douyin/contracts/provisional_v1.json` 必须保持 `live_verified=false`；
+          - 不得自动接入真实 IM；
+          - 不得猜测字段号、空值、重复、切换或重连行为；
+          - 不得增加 OCR、人脸、声纹、礼物、弹幕、连麦成员、昵称、标题或画面位置 fallback；
+          - 不得宣布完整 P1 完成。
+
+          ## 后续建议
+
+          下一阶段只做普通交互浏览器中的真实 WSS 证据采集、目标 method/字段验证和去标识 fixture。多房间 RoomManager、长期轮询、无限录制、切片和任务队列继续拆分。
+          DOC
+
+          cat > docs/P1B_TEST_MATRIX.md <<'DOC'
+          # P1B 第一批测试矩阵
+
+          | 边界 | 覆盖 |
+          |---|---|
+          | schema v5 空库迁移 | migration/unit |
+          | 64 位 ID 字符串 | model/repository/API |
+          | 首事件前 Waiting | repository |
+          | A→B 切换 | repository |
+          | 相同 dedup key | duplicate_count |
+          | 空 recipient | Unknown(empty_recipient) |
+          | IM 断线 | Unknown(im_disconnected) |
+          | 重连 | 保持 Unknown |
+          | 迟到事件 | `is_late=1` 且不回滚 |
+          | 跨 runtime monotonic | 不直接比较 |
+          | session 结束 | 关闭 interval/session |
+          | API 隐私 | 无 raw payload/extra/unknown fields |
+          | SQLite replay | 两次空库结果一致 |
+          | Python 3.12/3.13 | GitHub Actions |
+          | Windows | `verify.bat` |
+          | 恢复资产 | Git Bundle/source ZIP |
+          DOC
+
+          mkdir -p docs/protocol
+          cat > docs/protocol/P1B_PROTOCOL_EVIDENCE_GATE.md <<'DOC'
+          # P1B 真实协议证据门禁
+
+          ## 当前状态
+
+          ```text
+          target_method=WebcastGroupLiveGiftRecipientRecommendMessage
+          live_verified=false
+          Issue #1=open
+          ```
+
+          合成 reducer、临时 SQLite replay、公开页面流候选和无登录 headless 成功都不能替代真实目标消息取证。
+
+          ## 解除门禁所需证据
+
+          - 用户授权房间的普通交互浏览器实际 IM WSS；
+          - 目标 method 的去标识 binary/payload 证据；
+          - recipient user_id/open_id 字段位置；
+          - 空 recipient 编码；
+          - `msg_id` 重复行为；
+          - `change_reason_enum` 原始值；
+          - 断线、重连和下一条有效事件顺序；
+          - 服务端时间、接收时间和延迟；
+          - 经人工审查、可回放且不含隐私的最小 fixture。
+
+          ## 禁止推断
+
+          不得使用 OCR、人脸、声纹、礼物、弹幕、连麦成员、昵称、标题、画面位置或媒体内容推断 recipient。
+          DOC
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          readme_path = Path('README.md')
+          readme = readme_path.read_text(encoding='utf-8')
+          if '### P1B 当前分支' not in readme:
+              marker = '## 快速开始\n'
+              if marker not in readme:
+                  raise SystemExit('README quick start marker not found')
+              section = '''### P1B 当前分支
+
+- SQLite schema v5 recipient 事务投影；
+- canonical event 去重、重复计数、迟到标记；
+- Waiting/Active/Unknown interval；
+- 空 recipient、IM 断线和重连严格语义；
+- 房间级 recipient state/events/intervals 只读 API；
+- 临时 SQLite 确定性回放；
+- `live_verified=false` 和 Issue #1 真实证据门禁保持不变。
+
+```text
+GET /api/rooms/{room_key}/recipient/state
+GET /api/rooms/{room_key}/recipient/events
+GET /api/rooms/{room_key}/recipient/intervals
+```
+
+合成回放只验证工程语义，不能替代真实 `WebcastGroupLiveGiftRecipientRecommendMessage` 现场证据。
+
+'''
+              readme = readme.replace(marker, section + marker, 1)
+          if 'replay_recipient_database.py' not in readme:
+              marker = 'python -m pytest -q -p no:cacheprovider --tb=short\n'
+              if marker in readme:
+                  readme = readme.replace(
+                      marker,
+                      marker + 'python tools/replay_recipient_fixture.py --quiet\n'
+                      + 'python tools/replay_recipient_database.py --output userdata/recipient-db-replay.json\n',
+                      1,
+                  )
+          readme_path.write_text(readme, encoding='utf-8')
+
+          plan_path = Path('docs/P1B_IMPLEMENTATION_PLAN.md')
+          if plan_path.exists():
+              plan = plan_path.read_text(encoding='utf-8')
+              plan = re.sub(
+                  r'状态：\*\*.*?\*\*  ',
+                  '状态：**第一批工程实现完成，等待 Draft PR 最终 CI；真实协议仍由 Issue #1 门禁。**  ',
+                  plan,
+                  count=1,
+              )
+              plan_path.write_text(plan, encoding='utf-8')
+
+          workflow_path = Path('docs/GITHUB_WORKFLOW.md')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          if 'recipient 序列到临时 SQLite' not in workflow:
+              marker = '- 合成 fixture 确定性 replay；'
+              if marker in workflow:
+                  workflow = workflow.replace(
+                      marker,
+                      '- 合成 fixture 确定性 reducer replay；\n'
+                      '- 合成 recipient 序列到临时 SQLite 的确定性数据库 replay；',
+                      1,
+                  )
+              else:
+                  workflow += '\n- P1B CI 必须执行 recipient SQLite replay，且不得公开 raw payload。\n'
+              workflow_path.write_text(workflow, encoding='utf-8')
+          PY
+      - name: Validate and publish documentation milestone
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/p1b-docs-once.yml
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          python tools/replay_recipient_database.py --output "$RUNNER_TEMP/recipient-db-replay.json"
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'docs: document P1B recipient evidence gate'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
