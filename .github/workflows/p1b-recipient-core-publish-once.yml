@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = "e6ac77d7b58700a277c3af30af9d638098f1f875"
+          test "$(git rev-parse HEAD^)" = "f75163fc606c6e5928b5847c56c656c1ad70d4e6"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1b-recipient-core-publish-once.yml"
 
           payload="$RUNNER_TEMP/p1b-recipient-core.tar.gz"
@@ -69,7 +69,19 @@ jobs:
           tests/unit/test_recipient_session_repository.py 8136f570b514cb8e4c266c3f19df6ada7d20177f
           EOF
 
+          git show e2fee9a320529935e4d88f587b12f233d848121f:.github/workflows/ci.yml \
+            > .github/workflows/ci.yml
           rm .github/workflows/p1b-recipient-core-publish-once.yml
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          contract = json.loads(
+              Path("app/douyin/contracts/provisional_v1.json").read_text(encoding="utf-8")
+          )
+          if contract.get("live_verified") is not False:
+              raise SystemExit("live_verified must remain false")
+          PY
           git diff --check
 
       - name: Install locked dependencies
@@ -109,13 +121,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A -- \
+            .github/workflows/ci.yml \
             .github/workflows/p1b-recipient-core-publish-once.yml \
             app/sessions/__init__.py \
             app/sessions/models.py \
             app/sessions/repository.py \
             app/sessions/service.py \
             tests/unit/test_recipient_session_repository.py
-          test "$(git diff --cached --name-only | wc -l)" -eq 6
+          test "$(git diff --cached --name-only | wc -l)" -eq 7
           git diff --cached --check
           git commit -m "feat: persist recipient events and strict timeline transactions"
           test -z "$(git status --short)"
