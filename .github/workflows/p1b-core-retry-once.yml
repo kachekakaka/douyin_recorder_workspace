@@ -1,0 +1,66 @@
+name: Guarded retry for P1B core milestone once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-core-retry-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - name: Retry only when core milestone is still absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 180
+          git fetch origin feature/p1b-single-room-recipient-foundation
+          git reset --hard origin/feature/p1b-single-room-recipient-foundation
+          if git cat-file -e HEAD:app/recipients/repository.py 2>/dev/null; then
+            rm .github/workflows/p1b-core-retry-once.yml
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git commit -m 'chore: remove unused P1B core retry'
+            git push origin HEAD:feature/p1b-single-room-recipient-foundation
+            exit 0
+          fi
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/p1b-core-once.yml')
+          if not path.exists():
+              raise SystemExit('core publisher is absent while core files are missing')
+          text = path.read_text(encoding='utf-8')
+          old = """          for test in Path('tests').rglob('*.py'):
+              value = test.read_text(encoding='utf-8')
+              value = value.replace('schema_version() == 4', 'schema_version() == 5')
+              test.write_text(value, encoding='utf-8')
+"""
+          new = """          for test in Path('tests').rglob('*.py'):
+              value = test.read_text(encoding='utf-8')
+              value = value.replace('schema_version() == 4', 'schema_version() == 5')
+              value = value.replace('schema_version == 4', 'schema_version == 5')
+              value = value.replace('MIGRATIONS[-1].version == 4', 'MIGRATIONS[-1].version == 5')
+              test.write_text(value, encoding='utf-8')
+"""
+          if old in text:
+              text = text.replace(old, new, 1)
+          text += '\n# guarded core retry\n'
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/p1b-core-retry-once.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: broaden P1B schema v5 test migration'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
