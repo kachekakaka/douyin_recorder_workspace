@@ -169,7 +169,8 @@ def test_evidence_bundle_public_report_and_human_approval(tmp_path: Path) -> Non
     bundle.prepare()
     bundle.register_websocket(
         "request-1",
-        "wss://webcast5-ws-web-lf.douyin.com/PRIVATE-PATH?signature=SECRET",
+        "wss://webcast5-ws-web-lf.douyin.com/PRIVATE-PATH?"
+        "signature=SECRET",
     )
     bundle.capture_binary_frame(
         _target_frame(),
