@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "24e6089959a3a9d8b04723d840000a1eee12139c"
+          test "$(git rev-parse HEAD^)" = "76076892e35b6f797ec57630b285a3f470808fca"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1c-evidence-materialize-once.yml"
 
       - name: Reconstruct and verify reviewed source payload
@@ -140,31 +140,6 @@ jobs:
           PY
           git diff --check
 
-      - name: Stage reviewed P1C source files
-        shell: bash
-        run: |
-          set -euo pipefail
-          git add -- \
-            README.md \
-            app/douyin/evidence.py \
-            docs/GITHUB_WORKFLOW.md \
-            docs/P1C_IMPLEMENTATION_REPORT.md \
-            docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md \
-            tests/unit/test_recipient_evidence.py \
-            tools/douyin_interactive_evidence.py \
-            tools/export_recipient_evidence_fixture.py \
-            tools/verify_source.py
-
-      - name: Stage one-time workflow deletion
-        shell: bash
-        run: |
-          set -euo pipefail
-          git add -u -- .github/workflows/p1c-evidence-materialize-once.yml
-
-      - name: Show staged P1C tree
-        shell: bash
-        run: git diff --cached --name-status
-
       - name: Install locked dependencies
         run: |
           python -m pip install --upgrade pip
@@ -192,6 +167,31 @@ jobs:
           python tools/ffmpeg_supervisor_smoke.py \
             --duration 2 \
             --output-dir "$RUNNER_TEMP/p1c-ffmpeg-smoke"
+
+      - name: Stage reviewed P1C source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            README.md \
+            app/douyin/evidence.py \
+            docs/GITHUB_WORKFLOW.md \
+            docs/P1C_IMPLEMENTATION_REPORT.md \
+            docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md \
+            tests/unit/test_recipient_evidence.py \
+            tools/douyin_interactive_evidence.py \
+            tools/export_recipient_evidence_fixture.py \
+            tools/verify_source.py
+
+      - name: Stage one-time workflow deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -u -- .github/workflows/p1c-evidence-materialize-once.yml
+
+      - name: Show staged P1C tree
+        shell: bash
+        run: git diff --cached --name-status
 
       - name: Commit verified P1C implementation
         shell: bash
