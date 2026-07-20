@@ -1,0 +1,814 @@
+name: P1B core publish once
+
+on:
+  push:
+    branches: [feature/p1b-single-room-recipient-foundation]
+    paths:
+      - .github/workflows/p1b-core-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1b-single-room-recipient-foundation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+      - name: Materialize P1B transaction projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin feature/p1b-single-room-recipient-foundation
+          rm -f .github/p1b-payload-placeholder
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          package = root / 'app' / 'recipients'
+          package.mkdir(parents=True, exist_ok=True)
+
+          (package / '__init__.py').write_text('''from app.recipients.models import (\n    DecodedRecipientEvent,\n    RecipientEventRecord,\n    RecipientIntervalRecord,\n    RecipientStateSnapshot,\n)\nfrom app.recipients.repository import RecipientRepository\nfrom app.recipients.service import RecipientService\n\n__all__ = [\n    "DecodedRecipientEvent",\n    "RecipientEventRecord",\n    "RecipientIntervalRecord",\n    "RecipientRepository",\n    "RecipientService",\n    "RecipientStateSnapshot",\n]\n''', encoding='utf-8')
+
+          (package / 'models.py').write_text(r'''from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from typing import Any, Literal
+
+TARGET_METHOD = "WebcastGroupLiveGiftRecipientRecommendMessage"
+RecipientState = Literal["waiting", "active", "unknown", "offline"]
+
+
+def _string_id(value: str | int | None) -> str | None:
+    if value is None:
+        return None
+    rendered = str(value).strip()
+    return rendered or None
+
+
+def _safe_json_object(value: str | dict[str, Any] | None) -> str:
+    if value is None:
+        return "{}"
+    parsed = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(parsed, dict):
+        raise ValueError("recipient JSON audit fields must be objects")
+    return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+@dataclass(frozen=True, slots=True)
+class DecodedRecipientEvent:
+    method: str
+    received_at_ms: int
+    received_monotonic_ns: int
+    runtime_instance_id: str
+    payload_hash: str
+    recipient_user_id: str | None = None
+    recipient_user_open_id: str | None = None
+    msg_id: str | None = None
+    envelope_msg_id: str | None = None
+    server_create_time: int | None = None
+    server_time_unit: str | None = None
+    change_reason_enum: int | None = None
+    extra_json: str = "{}"
+    raw_payload_json: str = "{}"
+    payload_size: int = 0
+    unknown_fields_json: str = "{}"
+
+    def __post_init__(self) -> None:
+        if self.method != TARGET_METHOD:
+            raise ValueError("only the target recipient method is accepted")
+        if self.received_at_ms < 0 or self.received_monotonic_ns < 0:
+            raise ValueError("recipient event clocks must be non-negative")
+        if not self.runtime_instance_id.strip():
+            raise ValueError("runtime_instance_id is required")
+        digest = self.payload_hash.casefold()
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError("payload_hash must be SHA-256 hex")
+        if self.payload_size < 0:
+            raise ValueError("payload_size must be non-negative")
+        object.__setattr__(self, "recipient_user_id", _string_id(self.recipient_user_id))
+        object.__setattr__(self, "recipient_user_open_id", _string_id(self.recipient_user_open_id))
+        object.__setattr__(self, "msg_id", _string_id(self.msg_id))
+        object.__setattr__(self, "envelope_msg_id", _string_id(self.envelope_msg_id))
+        object.__setattr__(self, "extra_json", _safe_json_object(self.extra_json))
+        object.__setattr__(self, "raw_payload_json", _safe_json_object(self.raw_payload_json))
+        object.__setattr__(self, "unknown_fields_json", _safe_json_object(self.unknown_fields_json))
+
+    @property
+    def recipient_key(self) -> str | None:
+        if self.recipient_user_id and self.recipient_user_id != "0":
+            return f"uid:{self.recipient_user_id}"
+        if self.recipient_user_open_id:
+            return f"openid:{self.recipient_user_open_id}"
+        return None
+
+    @property
+    def dedup_key(self) -> str:
+        if self.msg_id:
+            return f"msg:{self.msg_id}"
+        return f"hash:{self.payload_hash}:{self.received_at_ms // 1000}"
+
+    @classmethod
+    def synthetic(
+        cls,
+        *,
+        msg_id: str,
+        recipient_user_id: str | None,
+        received_at_ms: int,
+        received_monotonic_ns: int,
+        runtime_instance_id: str,
+        payload_tag: str,
+    ) -> "DecodedRecipientEvent":
+        payload = json.dumps({"synthetic": True, "tag": payload_tag}, sort_keys=True)
+        return cls(
+            method=TARGET_METHOD,
+            msg_id=msg_id,
+            envelope_msg_id=msg_id,
+            recipient_user_id=recipient_user_id,
+            received_at_ms=received_at_ms,
+            received_monotonic_ns=received_monotonic_ns,
+            runtime_instance_id=runtime_instance_id,
+            payload_hash=hashlib.sha256(payload_tag.encode()).hexdigest(),
+            payload_size=len(payload.encode()),
+            raw_payload_json=payload,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RecipientEventRecord:
+    id: int
+    session_id: str
+    dedup_key: str
+    msg_id: str | None
+    envelope_msg_id: str | None
+    recipient_user_id: str | None
+    recipient_user_open_id: str | None
+    recipient_key: str | None
+    change_reason_enum: int | None
+    received_at_ms: int
+    received_monotonic_ns: int
+    runtime_instance_id: str
+    payload_hash: str
+    payload_size: int
+    is_late: bool
+    duplicate_count: int
+    first_received_at_ms: int
+    last_received_at_ms: int
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+
+
+@dataclass(frozen=True, slots=True)
+class RecipientIntervalRecord:
+    id: int
+    session_id: str
+    state: RecipientState
+    recipient_key: str | None
+    recipient_user_id: str | None
+    recipient_user_open_id: str | None
+    reason: str | None
+    started_at_ms: int
+    ended_at_ms: int | None
+    runtime_instance_id: str
+    ended_runtime_instance_id: str | None
+    started_monotonic_ns: int | None
+    ended_monotonic_ns: int | None
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+
+
+@dataclass(frozen=True, slots=True)
+class RecipientStateSnapshot:
+    room_key: str
+    session_id: str | None
+    state: RecipientState
+    recipient_key: str | None
+    recipient_user_id: str | None
+    recipient_user_open_id: str | None
+    reason: str | None
+    started_at_ms: int | None
+    runtime_instance_id: str | None
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+''', encoding='utf-8')
+
+          migration = root / 'app' / 'db' / 'migrations.py'
+          text = migration.read_text(encoding='utf-8')
+          if 'p1b_recipient_projection' not in text:
+              block = r'''
+    Migration(
+        5,
+        "p1b_recipient_projection",
+        r"""
+CREATE TABLE recipient_projection_sessions (
+    id TEXT PRIMARY KEY,
+    room_key TEXT NOT NULL REFERENCES rooms(room_key) ON DELETE RESTRICT,
+    status TEXT NOT NULL CHECK(status IN ('active', 'ended')),
+    started_at_ms INTEGER NOT NULL,
+    ended_at_ms INTEGER,
+    runtime_instance_id TEXT NOT NULL,
+    started_monotonic_ns INTEGER NOT NULL,
+    ended_monotonic_ns INTEGER,
+    ended_runtime_instance_id TEXT,
+    protocol_contract_sha256 TEXT NOT NULL,
+    protocol_live_verified INTEGER NOT NULL DEFAULT 0 CHECK(protocol_live_verified IN (0, 1))
+);
+CREATE UNIQUE INDEX uq_recipient_projection_active_room
+    ON recipient_projection_sessions(room_key) WHERE status = 'active';
+CREATE INDEX ix_recipient_projection_sessions_room_time
+    ON recipient_projection_sessions(room_key, started_at_ms DESC);
+CREATE TABLE recipient_projection_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES recipient_projection_sessions(id) ON DELETE RESTRICT,
+    dedup_key TEXT NOT NULL,
+    method TEXT NOT NULL,
+    msg_id TEXT,
+    envelope_msg_id TEXT,
+    server_create_time INTEGER,
+    server_time_unit TEXT,
+    recipient_user_id TEXT,
+    recipient_user_open_id TEXT,
+    recipient_key TEXT,
+    change_reason_enum INTEGER,
+    extra_json TEXT NOT NULL DEFAULT '{}',
+    raw_payload_json TEXT NOT NULL DEFAULT '{}',
+    payload_hash TEXT NOT NULL,
+    payload_size INTEGER NOT NULL DEFAULT 0,
+    unknown_fields_json TEXT NOT NULL DEFAULT '{}',
+    received_at_ms INTEGER NOT NULL,
+    received_monotonic_ns INTEGER NOT NULL,
+    runtime_instance_id TEXT NOT NULL,
+    is_late INTEGER NOT NULL DEFAULT 0 CHECK(is_late IN (0, 1)),
+    duplicate_count INTEGER NOT NULL DEFAULT 0,
+    first_received_at_ms INTEGER NOT NULL,
+    last_received_at_ms INTEGER NOT NULL,
+    UNIQUE(session_id, dedup_key)
+);
+CREATE INDEX ix_recipient_projection_events_session_time
+    ON recipient_projection_events(session_id, received_at_ms, id);
+CREATE TABLE recipient_projection_intervals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES recipient_projection_sessions(id) ON DELETE RESTRICT,
+    state TEXT NOT NULL CHECK(state IN ('waiting', 'active', 'unknown')),
+    recipient_key TEXT,
+    recipient_user_id TEXT,
+    recipient_user_open_id TEXT,
+    reason TEXT,
+    started_at_ms INTEGER NOT NULL,
+    ended_at_ms INTEGER,
+    runtime_instance_id TEXT NOT NULL,
+    ended_runtime_instance_id TEXT,
+    started_monotonic_ns INTEGER,
+    ended_monotonic_ns INTEGER,
+    start_event_id INTEGER REFERENCES recipient_projection_events(id) ON DELETE RESTRICT,
+    end_event_id INTEGER REFERENCES recipient_projection_events(id) ON DELETE RESTRICT
+);
+CREATE UNIQUE INDEX uq_recipient_projection_open_interval
+    ON recipient_projection_intervals(session_id) WHERE ended_at_ms IS NULL;
+CREATE INDEX ix_recipient_projection_intervals_session_time
+    ON recipient_projection_intervals(session_id, started_at_ms, id);
+""",
+    ),
+'''
+              position = text.rfind('\n)')
+              if position < 0:
+                  raise SystemExit('migration tuple ending not found')
+              migration.write_text(text[:position] + block + text[position:], encoding='utf-8')
+          PY
+      - name: Materialize repository, service, tests and replay
+        shell: bash
+        run: |
+          cat > app/recipients/repository.py <<'PY'
+          from __future__ import annotations
+
+          import asyncio
+          from collections.abc import AsyncIterator
+          from contextlib import asynccontextmanager
+          from pathlib import Path
+          from typing import Any
+
+          import aiosqlite
+
+          from app.db import Database
+          from app.recipients.models import (
+              DecodedRecipientEvent,
+              RecipientEventRecord,
+              RecipientIntervalRecord,
+              RecipientStateSnapshot,
+          )
+
+
+          class RecipientRepository:
+              def __init__(self, database: Database) -> None:
+                  self._database = database
+                  self._lock = asyncio.Lock()
+
+              def _database_path(self) -> Path:
+                  for name in ("path", "database_path", "_path", "_database_path"):
+                      value = getattr(self._database, name, None)
+                      if value is not None:
+                          return Path(value)
+                  raise RuntimeError("database path is unavailable")
+
+              @asynccontextmanager
+              async def _transaction(self) -> AsyncIterator[aiosqlite.Connection]:
+                  shared_lock = (
+                      getattr(self._database, "_writer_lock", None)
+                      or getattr(self._database, "_write_lock", None)
+                      or self._lock
+                  )
+                  async with shared_lock:
+                      db = await aiosqlite.connect(self._database_path())
+                      db.row_factory = aiosqlite.Row
+                      try:
+                          await db.execute("PRAGMA foreign_keys = ON")
+                          await db.execute("PRAGMA busy_timeout = 5000")
+                          await db.execute("BEGIN IMMEDIATE")
+                          yield db
+                          await db.commit()
+                      except BaseException:
+                          await db.rollback()
+                          raise
+                      finally:
+                          await db.close()
+
+              async def start_session(self, *, room_key: str, session_id: str,
+                                      started_at_ms: int, started_monotonic_ns: int,
+                                      runtime_instance_id: str,
+                                      protocol_contract_sha256: str,
+                                      protocol_live_verified: bool = False) -> RecipientStateSnapshot:
+                  async with self._transaction() as db:
+                      await db.execute(
+                          """INSERT INTO recipient_projection_sessions(
+                          id, room_key, status, started_at_ms, runtime_instance_id,
+                          started_monotonic_ns, protocol_contract_sha256, protocol_live_verified
+                          ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?)""",
+                          (session_id, room_key, started_at_ms, runtime_instance_id,
+                           started_monotonic_ns, protocol_contract_sha256,
+                           int(protocol_live_verified)),
+                      )
+                      await db.execute(
+                          """INSERT INTO recipient_projection_intervals(
+                          session_id, state, reason, started_at_ms, runtime_instance_id,
+                          started_monotonic_ns) VALUES (?, 'waiting',
+                          'waiting_for_first_event', ?, ?, ?)""",
+                          (session_id, started_at_ms, runtime_instance_id,
+                           started_monotonic_ns),
+                      )
+                  return await self.get_state(room_key=room_key)
+
+              async def _active_session(self, db: aiosqlite.Connection,
+                                        room_key: str) -> aiosqlite.Row:
+                  cursor = await db.execute(
+                      """SELECT * FROM recipient_projection_sessions
+                      WHERE room_key = ? AND status = 'active'
+                      ORDER BY started_at_ms DESC LIMIT 1""", (room_key,))
+                  row = await cursor.fetchone()
+                  if row is None:
+                      raise LookupError("active recipient session not found")
+                  return row
+
+              async def _open_interval(self, db: aiosqlite.Connection,
+                                       session_id: str) -> aiosqlite.Row | None:
+                  cursor = await db.execute(
+                      """SELECT * FROM recipient_projection_intervals
+                      WHERE session_id = ? AND ended_at_ms IS NULL
+                      ORDER BY id DESC LIMIT 1""", (session_id,))
+                  return await cursor.fetchone()
+
+              async def _close_open_interval(self, db: aiosqlite.Connection, *,
+                                             session_id: str, ended_at_ms: int,
+                                             ended_monotonic_ns: int,
+                                             ended_runtime_instance_id: str,
+                                             end_event_id: int | None) -> None:
+                  await db.execute(
+                      """UPDATE recipient_projection_intervals SET ended_at_ms = ?,
+                      ended_monotonic_ns = ?, ended_runtime_instance_id = ?,
+                      end_event_id = ? WHERE session_id = ? AND ended_at_ms IS NULL""",
+                      (ended_at_ms, ended_monotonic_ns, ended_runtime_instance_id,
+                       end_event_id, session_id),
+                  )
+
+              async def apply_event(self, *, room_key: str,
+                                    event: DecodedRecipientEvent) -> RecipientEventRecord:
+                  async with self._transaction() as db:
+                      session = await self._active_session(db, room_key)
+                      session_id = str(session["id"])
+                      cursor = await db.execute(
+                          "SELECT * FROM recipient_projection_events WHERE session_id = ? AND dedup_key = ?",
+                          (session_id, event.dedup_key),
+                      )
+                      duplicate = await cursor.fetchone()
+                      if duplicate is not None:
+                          await db.execute(
+                              """UPDATE recipient_projection_events
+                              SET duplicate_count = duplicate_count + 1,
+                              last_received_at_ms = MAX(last_received_at_ms, ?)
+                              WHERE id = ?""",
+                              (event.received_at_ms, int(duplicate["id"])),
+                          )
+                          cursor = await db.execute(
+                              "SELECT * FROM recipient_projection_events WHERE id = ?",
+                              (int(duplicate["id"]),),
+                          )
+                          return self._event_record(await cursor.fetchone())
+                      current = await self._open_interval(db, session_id)
+                      is_late = current is not None and event.received_at_ms < int(current["started_at_ms"])
+                      if (current is not None and not is_late
+                              and str(current["runtime_instance_id"]) == event.runtime_instance_id
+                              and current["started_monotonic_ns"] is not None):
+                          is_late = event.received_monotonic_ns < int(current["started_monotonic_ns"])
+                      cursor = await db.execute(
+                          """INSERT INTO recipient_projection_events(
+                          session_id, dedup_key, method, msg_id, envelope_msg_id,
+                          server_create_time, server_time_unit, recipient_user_id,
+                          recipient_user_open_id, recipient_key, change_reason_enum,
+                          extra_json, raw_payload_json, payload_hash, payload_size,
+                          unknown_fields_json, received_at_ms, received_monotonic_ns,
+                          runtime_instance_id, is_late, first_received_at_ms,
+                          last_received_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                          (session_id, event.dedup_key, event.method, event.msg_id,
+                           event.envelope_msg_id, event.server_create_time,
+                           event.server_time_unit, event.recipient_user_id,
+                           event.recipient_user_open_id, event.recipient_key,
+                           event.change_reason_enum, event.extra_json,
+                           event.raw_payload_json, event.payload_hash,
+                           event.payload_size, event.unknown_fields_json,
+                           event.received_at_ms, event.received_monotonic_ns,
+                           event.runtime_instance_id, int(is_late),
+                           event.received_at_ms, event.received_at_ms),
+                      )
+                      event_id = int(cursor.lastrowid)
+                      if not is_late:
+                          state = "active" if event.recipient_key else "unknown"
+                          reason = None if event.recipient_key else "empty_recipient"
+                          unchanged = (current is not None
+                                       and str(current["state"]) == state
+                                       and current["recipient_key"] == event.recipient_key
+                                       and current["reason"] == reason)
+                          if not unchanged:
+                              await self._close_open_interval(
+                                  db, session_id=session_id,
+                                  ended_at_ms=event.received_at_ms,
+                                  ended_monotonic_ns=event.received_monotonic_ns,
+                                  ended_runtime_instance_id=event.runtime_instance_id,
+                                  end_event_id=event_id)
+                              await db.execute(
+                                  """INSERT INTO recipient_projection_intervals(
+                                  session_id, state, recipient_key, recipient_user_id,
+                                  recipient_user_open_id, reason, started_at_ms,
+                                  runtime_instance_id, started_monotonic_ns, start_event_id)
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  (session_id, state, event.recipient_key,
+                                   event.recipient_user_id,
+                                   event.recipient_user_open_id, reason,
+                                   event.received_at_ms, event.runtime_instance_id,
+                                   event.received_monotonic_ns, event_id),
+                              )
+                      cursor = await db.execute(
+                          "SELECT * FROM recipient_projection_events WHERE id = ?",
+                          (event_id,),
+                      )
+                      return self._event_record(await cursor.fetchone())
+
+              async def mark_disconnected(self, *, room_key: str,
+                                          received_at_ms: int,
+                                          received_monotonic_ns: int,
+                                          runtime_instance_id: str) -> RecipientStateSnapshot:
+                  async with self._transaction() as db:
+                      session = await self._active_session(db, room_key)
+                      session_id = str(session["id"])
+                      current = await self._open_interval(db, session_id)
+                      if current is None or not (str(current["state"]) == "unknown"
+                              and str(current["reason"] or "") == "im_disconnected"):
+                          await self._close_open_interval(
+                              db, session_id=session_id, ended_at_ms=received_at_ms,
+                              ended_monotonic_ns=received_monotonic_ns,
+                              ended_runtime_instance_id=runtime_instance_id,
+                              end_event_id=None)
+                          await db.execute(
+                              """INSERT INTO recipient_projection_intervals(
+                              session_id, state, reason, started_at_ms,
+                              runtime_instance_id, started_monotonic_ns)
+                              VALUES (?, 'unknown', 'im_disconnected', ?, ?, ?)""",
+                              (session_id, received_at_ms, runtime_instance_id,
+                               received_monotonic_ns),
+                          )
+                  return await self.get_state(room_key=room_key)
+
+              async def mark_reconnected(self, *, room_key: str) -> RecipientStateSnapshot:
+                  return await self.get_state(room_key=room_key)
+
+              async def end_session(self, *, room_key: str, ended_at_ms: int,
+                                    ended_monotonic_ns: int,
+                                    ended_runtime_instance_id: str) -> None:
+                  async with self._transaction() as db:
+                      session = await self._active_session(db, room_key)
+                      session_id = str(session["id"])
+                      await self._close_open_interval(
+                          db, session_id=session_id, ended_at_ms=ended_at_ms,
+                          ended_monotonic_ns=ended_monotonic_ns,
+                          ended_runtime_instance_id=ended_runtime_instance_id,
+                          end_event_id=None)
+                      await db.execute(
+                          """UPDATE recipient_projection_sessions SET status = 'ended',
+                          ended_at_ms = ?, ended_monotonic_ns = ?,
+                          ended_runtime_instance_id = ? WHERE id = ?""",
+                          (ended_at_ms, ended_monotonic_ns,
+                           ended_runtime_instance_id, session_id),
+                      )
+
+              async def get_state(self, *, room_key: str) -> RecipientStateSnapshot:
+                  rows = await self._database.fetch_all(
+                      """SELECT s.id AS session_id, i.*
+                      FROM recipient_projection_sessions s
+                      LEFT JOIN recipient_projection_intervals i
+                      ON i.session_id = s.id AND i.ended_at_ms IS NULL
+                      WHERE s.room_key = ? AND s.status = 'active'
+                      ORDER BY s.started_at_ms DESC LIMIT 1""", (room_key,))
+                  if not rows:
+                      return RecipientStateSnapshot(room_key, None, "offline", None,
+                                                    None, None, None, None, None)
+                  row = rows[0]
+                  return RecipientStateSnapshot(
+                      room_key=room_key, session_id=str(row["session_id"]),
+                      state=str(row["state"]), recipient_key=row["recipient_key"],
+                      recipient_user_id=row["recipient_user_id"],
+                      recipient_user_open_id=row["recipient_user_open_id"],
+                      reason=row["reason"], started_at_ms=int(row["started_at_ms"]),
+                      runtime_instance_id=str(row["runtime_instance_id"]))
+
+              async def list_events(self, *, room_key: str, limit: int = 100,
+                                    offset: int = 0) -> list[RecipientEventRecord]:
+                  if not 1 <= limit <= 500 or offset < 0:
+                      raise ValueError("invalid pagination")
+                  rows = await self._database.fetch_all(
+                      """SELECT e.* FROM recipient_projection_events e
+                      JOIN recipient_projection_sessions s ON s.id = e.session_id
+                      WHERE s.room_key = ? ORDER BY e.received_at_ms DESC, e.id DESC
+                      LIMIT ? OFFSET ?""", (room_key, limit, offset))
+                  return [self._event_record(row) for row in rows]
+
+              async def list_intervals(self, *, room_key: str, limit: int = 100,
+                                       offset: int = 0) -> list[RecipientIntervalRecord]:
+                  if not 1 <= limit <= 500 or offset < 0:
+                      raise ValueError("invalid pagination")
+                  rows = await self._database.fetch_all(
+                      """SELECT i.* FROM recipient_projection_intervals i
+                      JOIN recipient_projection_sessions s ON s.id = i.session_id
+                      WHERE s.room_key = ? ORDER BY i.started_at_ms DESC, i.id DESC
+                      LIMIT ? OFFSET ?""", (room_key, limit, offset))
+                  return [self._interval_record(row) for row in rows]
+
+              @staticmethod
+              def _event_record(row: Any) -> RecipientEventRecord:
+                  return RecipientEventRecord(
+                      id=int(row["id"]), session_id=str(row["session_id"]),
+                      dedup_key=str(row["dedup_key"]), msg_id=row["msg_id"],
+                      envelope_msg_id=row["envelope_msg_id"],
+                      recipient_user_id=row["recipient_user_id"],
+                      recipient_user_open_id=row["recipient_user_open_id"],
+                      recipient_key=row["recipient_key"],
+                      change_reason_enum=row["change_reason_enum"],
+                      received_at_ms=int(row["received_at_ms"]),
+                      received_monotonic_ns=int(row["received_monotonic_ns"]),
+                      runtime_instance_id=str(row["runtime_instance_id"]),
+                      payload_hash=str(row["payload_hash"]),
+                      payload_size=int(row["payload_size"]),
+                      is_late=bool(row["is_late"]),
+                      duplicate_count=int(row["duplicate_count"]),
+                      first_received_at_ms=int(row["first_received_at_ms"]),
+                      last_received_at_ms=int(row["last_received_at_ms"]))
+
+              @staticmethod
+              def _interval_record(row: Any) -> RecipientIntervalRecord:
+                  return RecipientIntervalRecord(
+                      id=int(row["id"]), session_id=str(row["session_id"]),
+                      state=str(row["state"]), recipient_key=row["recipient_key"],
+                      recipient_user_id=row["recipient_user_id"],
+                      recipient_user_open_id=row["recipient_user_open_id"],
+                      reason=row["reason"], started_at_ms=int(row["started_at_ms"]),
+                      ended_at_ms=None if row["ended_at_ms"] is None else int(row["ended_at_ms"]),
+                      runtime_instance_id=str(row["runtime_instance_id"]),
+                      ended_runtime_instance_id=row["ended_runtime_instance_id"],
+                      started_monotonic_ns=None if row["started_monotonic_ns"] is None else int(row["started_monotonic_ns"]),
+                      ended_monotonic_ns=None if row["ended_monotonic_ns"] is None else int(row["ended_monotonic_ns"]))
+          PY
+          cat > app/recipients/service.py <<'PY'
+          from __future__ import annotations
+          import asyncio
+          from app.recipients.models import DecodedRecipientEvent
+          from app.recipients.repository import RecipientRepository
+
+          class RecipientService:
+              def __init__(self, repository: RecipientRepository) -> None:
+                  self._repository = repository
+                  self._locks: dict[str, asyncio.Lock] = {}
+                  self._guard = asyncio.Lock()
+              async def _lock(self, room_key: str) -> asyncio.Lock:
+                  async with self._guard:
+                      return self._locks.setdefault(room_key, asyncio.Lock())
+              async def start_session(self, **kwargs: object):
+                  lock = await self._lock(str(kwargs["room_key"]))
+                  async with lock:
+                      return await self._repository.start_session(**kwargs)
+              async def apply_event(self, *, room_key: str, event: DecodedRecipientEvent):
+                  lock = await self._lock(room_key)
+                  async with lock:
+                      return await self._repository.apply_event(room_key=room_key, event=event)
+              async def mark_disconnected(self, **kwargs: object):
+                  lock = await self._lock(str(kwargs["room_key"]))
+                  async with lock:
+                      return await self._repository.mark_disconnected(**kwargs)
+              async def mark_reconnected(self, *, room_key: str):
+                  lock = await self._lock(room_key)
+                  async with lock:
+                      return await self._repository.mark_reconnected(room_key=room_key)
+              async def end_session(self, **kwargs: object) -> None:
+                  lock = await self._lock(str(kwargs["room_key"]))
+                  async with lock:
+                      await self._repository.end_session(**kwargs)
+              async def get_state(self, *, room_key: str):
+                  return await self._repository.get_state(room_key=room_key)
+              async def list_events(self, *, room_key: str, limit: int = 100, offset: int = 0):
+                  return await self._repository.list_events(room_key=room_key, limit=limit, offset=offset)
+              async def list_intervals(self, *, room_key: str, limit: int = 100, offset: int = 0):
+                  return await self._repository.list_intervals(room_key=room_key, limit=limit, offset=offset)
+          PY
+          cat > tests/unit/test_recipient_projection.py <<'PY'
+          from __future__ import annotations
+          import asyncio
+          from pathlib import Path
+          from app.db import Database
+          from app.recipients import DecodedRecipientEvent, RecipientRepository, RecipientService
+
+          def test_recipient_projection_state_machine_and_privacy(tmp_path: Path) -> None:
+              async def scenario() -> None:
+                  db = Database(tmp_path / "recipient.db")
+                  await db.initialize()
+                  try:
+                      assert await db.schema_version() == 5
+                      service = RecipientService(RecipientRepository(db))
+                      await service.start_session(room_key="room-a", session_id="session-a",
+                          started_at_ms=1000, started_monotonic_ns=1_000_000,
+                          runtime_instance_id="runtime-a", protocol_contract_sha256="0" * 64,
+                          protocol_live_verified=False)
+                      assert (await service.get_state(room_key="room-a")).state == "waiting"
+                      a = DecodedRecipientEvent.synthetic(msg_id="1",
+                          recipient_user_id="90071992547409931", received_at_ms=1100,
+                          received_monotonic_ns=1_100_000, runtime_instance_id="runtime-a",
+                          payload_tag="a")
+                      await service.apply_event(room_key="room-a", event=a)
+                      await service.apply_event(room_key="room-a", event=a)
+                      assert (await service.list_events(room_key="room-a"))[0].duplicate_count == 1
+                      b = DecodedRecipientEvent.synthetic(msg_id="2",
+                          recipient_user_id="90071992547409932", received_at_ms=1200,
+                          received_monotonic_ns=1_200_000, runtime_instance_id="runtime-a",
+                          payload_tag="b")
+                      await service.apply_event(room_key="room-a", event=b)
+                      assert (await service.get_state(room_key="room-a")).recipient_user_id == "90071992547409932"
+                      empty = DecodedRecipientEvent.synthetic(msg_id="3", recipient_user_id=None,
+                          received_at_ms=1300, received_monotonic_ns=1_300_000,
+                          runtime_instance_id="runtime-a", payload_tag="empty")
+                      await service.apply_event(room_key="room-a", event=empty)
+                      assert (await service.get_state(room_key="room-a")).reason == "empty_recipient"
+                      await service.mark_disconnected(room_key="room-a", received_at_ms=1400,
+                          received_monotonic_ns=1_400_000, runtime_instance_id="runtime-a")
+                      assert (await service.mark_reconnected(room_key="room-a")).reason == "im_disconnected"
+                      c = DecodedRecipientEvent.synthetic(msg_id="4",
+                          recipient_user_id="90071992547409933", received_at_ms=1600,
+                          received_monotonic_ns=1_600_000, runtime_instance_id="runtime-b",
+                          payload_tag="c")
+                      await service.apply_event(room_key="room-a", event=c)
+                      late = DecodedRecipientEvent.synthetic(msg_id="5",
+                          recipient_user_id="90071992547409934", received_at_ms=1250,
+                          received_monotonic_ns=1_250_000, runtime_instance_id="runtime-a",
+                          payload_tag="late")
+                      assert (await service.apply_event(room_key="room-a", event=late)).is_late
+                      assert (await service.get_state(room_key="room-a")).recipient_user_id == "90071992547409933"
+                      rendered = repr([item.to_public_dict() for item in await service.list_events(room_key="room-a")])
+                      assert "raw_payload" not in rendered and "synthetic" not in rendered
+                      await service.end_session(room_key="room-a", ended_at_ms=1700,
+                          ended_monotonic_ns=1_700_000,
+                          ended_runtime_instance_id="runtime-b")
+                      assert (await service.get_state(room_key="room-a")).state == "offline"
+                  finally:
+                      await db.close()
+              asyncio.run(scenario())
+          PY
+          cat > tools/replay_recipient_database.py <<'PY'
+          from __future__ import annotations
+          import argparse, asyncio, json, tempfile
+          from pathlib import Path
+          from app.db import Database
+          from app.recipients import DecodedRecipientEvent, RecipientRepository, RecipientService
+
+          async def replay(path: Path) -> dict[str, object]:
+              db = Database(path)
+              await db.initialize()
+              try:
+                  service = RecipientService(RecipientRepository(db))
+                  await service.start_session(room_key="fixture-room", session_id="fixture-session",
+                      started_at_ms=1000, started_monotonic_ns=1_000_000,
+                      runtime_instance_id="fixture-runtime", protocol_contract_sha256="0" * 64,
+                      protocol_live_verified=False)
+                  for msg_id, uid, at in (("1", "90071992547409931", 1100),
+                                          ("1", "90071992547409931", 1120),
+                                          ("2", "90071992547409932", 1200),
+                                          ("3", None, 1300)):
+                      await service.apply_event(room_key="fixture-room",
+                          event=DecodedRecipientEvent.synthetic(msg_id=msg_id,
+                              recipient_user_id=uid, received_at_ms=at,
+                              received_monotonic_ns=at * 1000,
+                              runtime_instance_id="fixture-runtime",
+                              payload_tag=f"event-{msg_id}"))
+                  await service.mark_disconnected(room_key="fixture-room",
+                      received_at_ms=1400, received_monotonic_ns=1_400_000,
+                      runtime_instance_id="fixture-runtime")
+                  return {"schema_version": await db.schema_version(),
+                      "contract_live_verified": False,
+                      "state": (await service.get_state(room_key="fixture-room")).to_public_dict(),
+                      "events": [item.to_public_dict() for item in reversed(
+                          await service.list_events(room_key="fixture-room"))],
+                      "intervals": [item.to_public_dict() for item in reversed(
+                          await service.list_intervals(room_key="fixture-room"))]}
+              finally:
+                  await db.close()
+
+          async def main() -> int:
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--output", type=Path)
+              args = parser.parse_args()
+              with tempfile.TemporaryDirectory(prefix="recipient-replay-") as directory:
+                  result = await replay(Path(directory) / "replay.db")
+              rendered = json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+              if args.output:
+                  args.output.parent.mkdir(parents=True, exist_ok=True)
+                  args.output.write_text(rendered, encoding="utf-8")
+              else:
+                  print(rendered, end="")
+              return 0
+          if __name__ == "__main__":
+              raise SystemExit(asyncio.run(main()))
+          PY
+          cat > tests/unit/test_recipient_database_replay.py <<'PY'
+          from __future__ import annotations
+          import asyncio, json
+          from pathlib import Path
+          from tools.replay_recipient_database import replay
+
+          def test_recipient_database_replay_is_deterministic(tmp_path: Path) -> None:
+              async def scenario() -> None:
+                  first = await replay(tmp_path / "first.db")
+                  second = await replay(tmp_path / "second.db")
+                  assert first == second
+                  assert first["schema_version"] == 5
+                  assert first["contract_live_verified"] is False
+                  rendered = json.dumps(first, sort_keys=True)
+                  assert "raw_payload" not in rendered
+                  assert "synthetic" not in rendered
+                  assert "90071992547409931" in rendered
+              asyncio.run(scenario())
+          PY
+      - name: Validate and publish core milestone
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/p1b-core-once.yml
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          python tools/replay_recipient_database.py --output "$RUNNER_TEMP/recipient-db-replay.json"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.loads(Path('app/douyin/contracts/provisional_v1.json').read_text())
+          if value.get('live_verified') is not False:
+              raise SystemExit('live_verified must remain false')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: add transactional recipient state projection'
+          git push origin HEAD:feature/p1b-single-room-recipient-foundation
