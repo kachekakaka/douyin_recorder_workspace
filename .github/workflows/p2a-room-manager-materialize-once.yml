@@ -1,0 +1,109 @@
+name: P2A materialize RoomManager once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/p2a-room-manager-materialize-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2a-room-manager-materialize-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    name: Materialize verified P2A RoomManager
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feature/p2a-multi-room-manager'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p2a-multi-room-manager
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify exact staging state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD^)" = "ae61320d525bdaa2593fe88034add36f882240e9"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p2a-room-manager-materialize-once.yml"
+
+      - name: Reconstruct reviewed P2A payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$RUNNER_TEMP/p2a-payload.tar.gz"
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/REPLACE_PAYLOAD_BLOB" --jq .content \
+            | tr -d '\n' | base64 --decode > "$payload"
+          echo "22c7d0e4ce5208473f120097bd2433e3faa5c850e0640906d9913e1a48e92bba  $payload" | sha256sum -c -
+          test "$(stat -c %s "$payload")" = "33394"
+          tar -xzf "$payload"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          contract = json.loads(Path('app/douyin/contracts/provisional_v1.json').read_text(encoding='utf-8'))
+          if contract.get('live_verified') is not False:
+              raise SystemExit('live_verified must remain false')
+          PY
+          git diff --check
+
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+
+      - name: Run complete P2A validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          python tools/replay_recipient_fixture_to_db.py --output "$RUNNER_TEMP/recipient-db.json"
+          while IFS= read -r -d '' file; do node --check "$file"; done < <(find web -type f -name '*.js' -print0)
+
+      - name: Install FFmpeg and run inherited smoke tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          python tools/ffmpeg_supervisor_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p2a-supervisor-smoke"
+          python tools/recording_session_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p2a-session-smoke"
+
+      - name: Stage and commit exact P2A tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/p2a-room-manager-materialize-once.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: complete P2A multi-room manager"
+          test -z "$(git status --short)"
+          git push origin "HEAD:feature/p2a-multi-room-manager"
