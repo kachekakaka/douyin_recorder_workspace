@@ -160,6 +160,10 @@ class Settings:
     ffprobe_path: str
     config_path: Path
     protocol_contract_path: Path
+    room_manager_enabled: bool
+    poll_jitter_seconds: int
+    offline_confirmations: int
+    max_parallel_checks: int
 
     @property
     def public_url(self) -> str:
@@ -227,6 +231,7 @@ class Settings:
         config_path = resolved_paths.config_dir / "config.json"
         raw = sync_config(template_path, config_path)
         server = raw.get("server") if isinstance(raw.get("server"), dict) else {}
+        poll = raw.get("poll") if isinstance(raw.get("poll"), dict) else {}
 
         host = env.get("DOUYIN_RECORDER_HOST", str(server.get("host", "127.0.0.1"))).strip()
         if not host or any(char.isspace() for char in host):
@@ -250,6 +255,29 @@ class Settings:
         if not _is_loopback_host(host):
             raise SettingsError("P0 尚未实现管理员认证，只允许绑定 127.0.0.1、::1 或 localhost")
 
+        room_manager_enabled = _bool_value(
+            poll.get("enabled", False),
+            "poll.enabled",
+        )
+        poll_jitter_seconds = _int_value(
+            poll.get("jitter_seconds", 0),
+            "poll.jitter_seconds",
+            minimum=0,
+            maximum=300,
+        )
+        offline_confirmations = _int_value(
+            poll.get("offline_confirmations", 3),
+            "poll.offline_confirmations",
+            minimum=1,
+            maximum=20,
+        )
+        max_parallel_checks = _int_value(
+            poll.get("max_parallel_checks", 10),
+            "poll.max_parallel_checks",
+            minimum=1,
+            maximum=100,
+        )
+
         contract_path = Path(
             env.get(
                 "DOUYIN_RECORDER_PROTOCOL_CONTRACT",
@@ -267,4 +295,8 @@ class Settings:
             ffprobe_path=env.get("DOUYIN_RECORDER_FFPROBE", "ffprobe").strip() or "ffprobe",
             config_path=config_path,
             protocol_contract_path=contract_path,
+            room_manager_enabled=room_manager_enabled,
+            poll_jitter_seconds=poll_jitter_seconds,
+            offline_confirmations=offline_confirmations,
+            max_parallel_checks=max_parallel_checks,
         )

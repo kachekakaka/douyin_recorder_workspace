@@ -5,6 +5,7 @@
     "auth_required": false
   },
   "poll": {
+    "enabled": true,
     "interval_seconds": 15,
     "jitter_seconds": 5,
     "offline_confirmations": 3,
