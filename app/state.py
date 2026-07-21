@@ -10,6 +10,7 @@ from app.db import Database
 from app.douyin.live_page import DouyinLivePageClient
 from app.douyin.recipient import RecipientContract
 from app.douyin.stream_resolver import DouyinStreamResolver
+from app.manager import RoomManager
 from app.recording import RecordingSessionRepository, SingleRoomRecordingService, SupervisorFactory
 from app.rooms import RoomRepository, RoomService
 from app.runtime import ToolStatus, check_tool
@@ -28,6 +29,7 @@ class AppState:
     recipient_service: RecipientSessionService
     recording_repository: RecordingSessionRepository
     recording_service: SingleRoomRecordingService
+    room_manager: RoomManager
     runtime_instance_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     ffmpeg: ToolStatus | None = None
@@ -65,6 +67,14 @@ class AppState:
             runtime_instance_id=runtime_instance_id,
             **recording_kwargs,
         )
+        room_manager = RoomManager(
+            room_service=room_service,
+            recording_service=recording_service,
+            enabled=settings.room_manager_enabled,
+            jitter_seconds=settings.poll_jitter_seconds,
+            offline_confirmations=settings.offline_confirmations,
+            max_parallel_checks=settings.max_parallel_checks,
+        )
         return cls(
             settings=settings,
             database=database,
@@ -75,6 +85,7 @@ class AppState:
             recipient_service=recipient_service,
             recording_repository=recording_repository,
             recording_service=recording_service,
+            room_manager=room_manager,
             runtime_instance_id=runtime_instance_id,
             started_at_ms=started_at_ms,
         )
@@ -87,6 +98,7 @@ class AppState:
         )
         await self.recording_service.recover()
         await self.refresh_tools()
+        await self.room_manager.start()
 
     async def refresh_tools(self) -> None:
         self.ffmpeg, self.ffprobe = await asyncio.gather(
@@ -114,11 +126,13 @@ class AppState:
             "ffmpeg": ffmpeg.to_dict(),
             "ffprobe": ffprobe.to_dict(),
             "protocol_contract": self.protocol_contract.to_public_dict(),
+            "room_manager": (await self.room_manager.get_status()).to_public_dict(),
         }
 
     async def stop(self) -> None:
         ended_at_ms = int(time.time() * 1000)
         try:
+            await self.room_manager.close()
             await self.recording_service.close()
             await self.database.execute(
                 "UPDATE runtime_instances SET ended_at_ms = ? WHERE id = ?",

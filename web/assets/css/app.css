@@ -39,3 +39,5 @@ code { overflow-wrap: anywhere; }
 button.record { background: #167052; }
 button.danger { background: #a53030; }
 .recording-active { color: #167052; font-weight: 700; }
+.worker-active { color: #235a8a; font-weight: 700; }
+button.compact { margin-top: auto; align-self: flex-start; }

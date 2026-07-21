@@ -53,3 +53,15 @@ export function stopRecording(roomKey) {
     method: 'POST',
   });
 }
+
+export function getManagerStatus() {
+  return request('/api/manager/status');
+}
+
+export function reconcileManager() {
+  return request('/api/manager/actions/reconcile', { method: 'POST' });
+}
+
+export function getWorker(roomKey) {
+  return request(`/api/rooms/${encodeURIComponent(roomKey)}/worker`);
+}

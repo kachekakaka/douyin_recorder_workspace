@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="抖音团播录播工作台 P1D">
-  <title>抖音录播工作台 · P1D</title>
+  <meta name="description" content="抖音团播录播工作台 P2A">
+  <title>抖音录播工作台 · P2A</title>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
     <div>
       <p class="kicker">DOUYIN RECORDER WORKSPACE</p>
       <h1>抖音录播工作台</h1>
-      <p>当前阶段：P1D 单房间录制 Session 闭环</p>
+      <p>当前阶段：P2A 多房间自动录制编排</p>
     </div>
     <button id="refreshButton" type="button">刷新状态</button>
   </header>
@@ -25,6 +25,7 @@
       <article class="card"><span>应用</span><strong id="appState">正在连接…</strong><small id="versionText">-</small></article>
       <article class="card"><span>SQLite</span><strong id="databaseState">-</strong><small id="databasePath">-</small></article>
       <article class="card"><span>直播间</span><strong id="roomCount">0</strong><small>当前保存的单平台录制源</small></article>
+      <article class="card"><span>RoomManager</span><strong id="managerState">-</strong><small id="managerDetail">-</small><button id="managerReconcile" class="secondary compact" type="button">立即协调</button></article>
       <article class="card"><span>FFmpeg</span><strong id="ffmpegState">-</strong><small id="ffmpegVersion">-</small></article>
       <article class="card"><span>ffprobe</span><strong id="ffprobeState">-</strong><small id="ffprobeVersion">-</small></article>
       <article class="card"><span>推荐收礼人 Contract</span><strong id="protocolState">-</strong><small id="protocolHash">-</small></article>
@@ -39,7 +40,7 @@
         <label>协议<select id="roomProtocol"><option value="flv">FLV</option><option value="hls">HLS</option></select></label>
         <button id="roomSubmit" type="submit">保存直播间</button>
       </form>
-      <p class="muted">“立即检查”只返回脱敏流候选；“开始录制”会把完整签名 URL 仅在当前进程内存中传递给 FFmpeg，不写入 API、SQLite 或日志。</p>
+      <p class="muted">启用的房间由 RoomManager 自动检查：live 时确保录制，confirmed offline 时停止；unknown、blocked 或 error 不会切断已有媒体连接。完整签名 URL 仍只在当前进程内存中传递给 FFmpeg。</p>
     </section>
 
     <section class="panel">
@@ -48,13 +49,15 @@
     </section>
 
     <section class="panel">
-      <h2>P1D 范围</h2>
+      <h2>P2A 范围</h2>
       <ul>
         <li>房间 CRUD、严格 URL 边界和公开直播页立即检查</li>
         <li>FLV/HLS/清晰度候选的内存解析与脱敏结果</li>
         <li>显式 start/stop、单房间唯一 active Session、progress 与 segment 持久化</li>
+        <li>每个 enabled room 一个串行 worker，全局限制并发检查</li>
+        <li>live 自动确保录制；连续 offline 达阈值停止；unknown/blocked/error 保持媒体</li>
         <li>recording 与 recipient Waiting/Active/Unknown 共用同一个 session_id</li>
-        <li>不包含自动长期轮询、多房间调度、真实 recipient 自动接入或直播后导出任务</li>
+        <li>不包含真实 recipient 自动接入、直播后导出任务、多机器或公网管理</li>
       </ul>
       <p id="protocolNote">目标消息仍未形成经审查现场 fixture；运行 contract 保持 <code>live_verified=false</code>。</p>
       <p id="errorText" class="error" hidden></p>

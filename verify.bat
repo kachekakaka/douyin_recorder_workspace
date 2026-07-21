@@ -4,7 +4,7 @@ setlocal EnableExtensions
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
-title douyin_recorder_workspace P1D - 完整自检
+title douyin_recorder_workspace P2A - 完整自检
 
 call scripts\windows\prepare-python.bat dev
 if errorlevel 1 goto :failed
@@ -72,12 +72,12 @@ if errorlevel 1 (
 
 if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P1D 完整自检通过 =====
+echo ===== P2A 完整自检通过 =====
 exit /b 0
 
 :failed
 if defined VERIFY_DIR if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P1D 自检失败，请查看上方信息 =====
+echo ===== P2A 自检失败，请查看上方信息 =====
 pause
 exit /b 1

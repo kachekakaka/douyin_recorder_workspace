@@ -40,6 +40,10 @@ def test_settings_create_actual_config_and_runtime_directories(tmp_path: Path) -
     assert settings.paths.userdata_dir.is_dir()
     assert settings.paths.records_dir.is_dir()
     assert settings.paths.database_path.parent == settings.paths.userdata_dir
+    assert settings.room_manager_enabled is False
+    assert settings.poll_jitter_seconds == 0
+    assert settings.offline_confirmations == 3
+    assert settings.max_parallel_checks == 10
 
 
 def test_settings_refuse_public_bind_before_auth_exists(tmp_path: Path) -> None:
@@ -199,3 +203,45 @@ def test_room_url_uniqueness_migration_fails_explicitly_on_existing_duplicates(
             await database.initialize()
 
     asyncio.run(scenario())
+
+
+def test_poll_manager_settings_validate_safe_ranges(tmp_path: Path) -> None:
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "config.json.default").write_text(
+        json.dumps(
+            {
+                "server": {
+                    "host": "127.0.0.1",
+                    "port": 3399,
+                    "auth_required": False,
+                },
+                "poll": {
+                    "enabled": True,
+                    "jitter_seconds": 7,
+                    "offline_confirmations": 4,
+                    "max_parallel_checks": 6,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = Settings.load(
+        root=tmp_path,
+        paths=RuntimePaths.defaults(tmp_path),
+        environ={},
+    )
+    assert settings.room_manager_enabled is True
+    assert settings.poll_jitter_seconds == 7
+    assert settings.offline_confirmations == 4
+    assert settings.max_parallel_checks == 6
+
+    actual = json.loads(settings.config_path.read_text(encoding="utf-8"))
+    actual["poll"]["max_parallel_checks"] = 0
+    settings.config_path.write_text(json.dumps(actual), encoding="utf-8")
+    with pytest.raises(SettingsError, match="max_parallel_checks"):
+        Settings.load(
+            root=tmp_path,
+            paths=RuntimePaths.defaults(tmp_path),
+            environ={},
+        )
