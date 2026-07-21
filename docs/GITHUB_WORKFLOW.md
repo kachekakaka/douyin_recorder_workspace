@@ -36,7 +36,7 @@ git pull --ff-only origin main
 - 有未提交受 Git 管理修改的工作区；
 - 非 fast-forward 更新。
 
-## 2. P0/P1A/P1B/P1C 必须通过的 CI
+## 2. P0/P1A/P1B/P1C/P1D 必须通过的 CI
 
 - Python 3.12、3.13；
 - 依赖锁与 `pip check`；
@@ -47,10 +47,12 @@ git pull --ff-only origin main
 - 合成 fixture 的确定性 reducer replay；
 - P1B synthetic fixture 到临时 SQLite 的确定性 database replay；
 - P1C synthetic CDP/WSS evidence、私人输出边界和 approval/hash 导出测试；
+- P1D recording/recipient 共享 Session、启动/停止/退出/恢复、segment 持久化和 API 隐私测试；
 - database replay 的 schema、duplicate、late、interval 和公开字段检查；
 - 原生 JavaScript 语法；
 - Windows `verify.bat`；
 - FFmpeg Supervisor 本地 `lavfi` smoke；
+- P1D recording Session 本地 `lavfi` smoke；
 - Git Bundle、源码 ZIP、SHA-256 和临时克隆恢复。
 
 P1B database replay 命令：
@@ -69,6 +71,7 @@ CI 和 Windows 都必须实际执行该命令。公开 replay 报告不得包含
 - P1A 媒体基础可以在 `live_verified=false` 下完成和合并；
 - P1B 事务投影基础可以消费 synthetic 或已经解码事件，但不能宣布真实 IM 自动接入完成；
 - P1C 只提供私人证据采集与人工审批门禁；工具链通过不能自动修改 contract；
+- P1D 只提供显式单房间录制闭环；不自动长期轮询，也不因 recipient 变化重启媒体；
 - `WebcastGroupLiveGiftRecipientRecommendMessage` 的真实字段、空值、重复、切换和重连证据继续由 Issue #1 门禁；
 - 只有去标识、人工审查、可回放的真实 fixture 形成后，才能在独立 PR 中评审 contract 或 `live_verified` 变更；
 - 不得为使 CI 通过而删除测试、降低断言、使用 `continue-on-error` 或提交真实凭据。

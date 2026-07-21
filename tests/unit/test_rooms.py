@@ -45,7 +45,7 @@ def test_room_repository_crud_and_check_audit(tmp_path: Path) -> None:
         rooms = await repository.list_rooms()
         assert len(rooms) == 1
         assert rooms[0].latest_check == check
-        assert await database.schema_version() == 4
+        assert await database.schema_version() == 5
         await database.close()
 
     asyncio.run(scenario())

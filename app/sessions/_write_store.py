@@ -30,6 +30,14 @@ class RecipientSessionWriteStore:
         protocol_live_verified: bool,
         external_room_id: str | None = None,
         title: str = "",
+        recording_protocol: str | None = None,
+        recording_quality: str | None = None,
+        input_host: str = "",
+        input_path_sha256: str = "",
+        input_url_sha256: str = "",
+        input_query_keys_json: str = "[]",
+        recording_container: str = "mkv",
+        segment_seconds: int | None = None,
     ) -> RecipientSessionState:
         if not session_id or not room_key or not runtime_instance_id:
             raise RecipientSessionStateError("session_id、room_key 与 runtime_instance_id 必填")
@@ -37,6 +45,27 @@ class RecipientSessionWriteStore:
             raise RecipientSessionStateError("场次起始时间无效")
         if not protocol_contract_sha256:
             raise RecipientSessionStateError("协议 contract SHA-256 必填")
+        if recording_protocol not in {None, "flv", "hls"}:
+            raise RecipientSessionStateError("recording_protocol 非法")
+        if recording_protocol is not None:
+            if recording_container not in {"mkv", "ts"}:
+                raise RecipientSessionStateError("recording_container 非法")
+            if segment_seconds is None or not 10 <= segment_seconds <= 86_400:
+                raise RecipientSessionStateError("segment_seconds 非法")
+            for name, value in (
+                ("input_path_sha256", input_path_sha256),
+                ("input_url_sha256", input_url_sha256),
+            ):
+                if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                    raise RecipientSessionStateError(f"{name} 必须是小写 SHA-256")
+            try:
+                query_keys = json.loads(input_query_keys_json)
+            except json.JSONDecodeError as exc:
+                raise RecipientSessionStateError("input_query_keys_json 无效") from exc
+            if not isinstance(query_keys, list) or not all(
+                isinstance(item, str) and len(item) <= 80 for item in query_keys
+            ):
+                raise RecipientSessionStateError("input_query_keys_json 无效")
 
         async def operation(connection: aiosqlite.Connection) -> None:
             await connection.execute(
@@ -44,8 +73,11 @@ class RecipientSessionWriteStore:
                 INSERT INTO sessions(
                     id, room_key, external_room_id, title, status, started_at_ms,
                     runtime_instance_id, protocol_contract_sha256,
-                    protocol_live_verified, started_monotonic_ns
-                ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+                    protocol_live_verified, started_monotonic_ns,
+                    recording_protocol, recording_quality, input_host,
+                    input_path_sha256, input_url_sha256, input_query_keys_json,
+                    recording_container, segment_seconds
+                ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -57,6 +89,14 @@ class RecipientSessionWriteStore:
                     protocol_contract_sha256,
                     int(protocol_live_verified),
                     started_monotonic_ns,
+                    recording_protocol,
+                    recording_quality,
+                    input_host[:255],
+                    input_path_sha256,
+                    input_url_sha256,
+                    input_query_keys_json,
+                    recording_container,
+                    segment_seconds,
                 ),
             )
             await self._open_interval(

@@ -10,6 +10,7 @@ from app.db import Database
 from app.douyin.live_page import DouyinLivePageClient
 from app.douyin.recipient import RecipientContract
 from app.douyin.stream_resolver import DouyinStreamResolver
+from app.recording import RecordingSessionRepository, SingleRoomRecordingService, SupervisorFactory
 from app.rooms import RoomRepository, RoomService
 from app.runtime import ToolStatus, check_tool
 from app.sessions import RecipientSessionRepository, RecipientSessionService
@@ -25,6 +26,8 @@ class AppState:
     room_service: RoomService
     recipient_repository: RecipientSessionRepository
     recipient_service: RecipientSessionService
+    recording_repository: RecordingSessionRepository
+    recording_service: SingleRoomRecordingService
     runtime_instance_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     ffmpeg: ToolStatus | None = None
@@ -37,8 +40,11 @@ class AppState:
         *,
         live_page_client: DouyinLivePageClient | None = None,
         stream_resolver: DouyinStreamResolver | None = None,
+        recording_supervisor_factory: SupervisorFactory | None = None,
     ) -> AppState:
         contract = RecipientContract.load(settings.protocol_contract_path)
+        runtime_instance_id = uuid.uuid4().hex
+        started_at_ms = int(time.time() * 1000)
         database = Database(settings.paths.database_path)
         room_repository = RoomRepository(database)
         resolver = stream_resolver or DouyinStreamResolver(
@@ -47,6 +53,18 @@ class AppState:
         room_service = RoomService(room_repository, resolver)
         recipient_repository = RecipientSessionRepository(database)
         recipient_service = RecipientSessionService(recipient_repository, contract)
+        recording_repository = RecordingSessionRepository(database)
+        recording_kwargs: dict[str, object] = {}
+        if recording_supervisor_factory is not None:
+            recording_kwargs["supervisor_factory"] = recording_supervisor_factory
+        recording_service = SingleRoomRecordingService(
+            repository=recording_repository,
+            room_service=room_service,
+            recipient_service=recipient_service,
+            settings=settings,
+            runtime_instance_id=runtime_instance_id,
+            **recording_kwargs,
+        )
         return cls(
             settings=settings,
             database=database,
@@ -55,6 +73,10 @@ class AppState:
             room_service=room_service,
             recipient_repository=recipient_repository,
             recipient_service=recipient_service,
+            recording_repository=recording_repository,
+            recording_service=recording_service,
+            runtime_instance_id=runtime_instance_id,
+            started_at_ms=started_at_ms,
         )
 
     async def start(self) -> None:
@@ -63,6 +85,7 @@ class AppState:
             "INSERT INTO runtime_instances(id, app_version, started_at_ms) VALUES (?, ?, ?)",
             (self.runtime_instance_id, __version__, self.started_at_ms),
         )
+        await self.recording_service.recover()
         await self.refresh_tools()
 
     async def refresh_tools(self) -> None:
@@ -96,6 +119,7 @@ class AppState:
     async def stop(self) -> None:
         ended_at_ms = int(time.time() * 1000)
         try:
+            await self.recording_service.close()
             await self.database.execute(
                 "UPDATE runtime_instances SET ended_at_ms = ? WHERE id = ?",
                 (ended_at_ms, self.runtime_instance_id),

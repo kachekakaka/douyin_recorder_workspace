@@ -36,3 +36,6 @@ code { overflow-wrap: anywhere; }
 .room-card p { margin: 9px 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 620px) { .site-header { align-items: stretch; flex-direction: column; } .site-header button, .room-form button { width: 100%; } .room-form { grid-template-columns: 1fr; } }
+button.record { background: #167052; }
+button.danger { background: #a53030; }
+.recording-active { color: #167052; font-weight: 700; }

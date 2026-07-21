@@ -254,4 +254,36 @@ CREATE INDEX IF NOT EXISTS ix_sessions_room_started
     ON sessions(room_key, started_at_ms DESC);
 """,
     ),
+    Migration(
+        5,
+        "p1d_recording_session_fields",
+        r"""
+ALTER TABLE sessions ADD COLUMN recording_protocol TEXT NULL
+    CHECK (recording_protocol IS NULL OR recording_protocol IN ('flv', 'hls'));
+ALTER TABLE sessions ADD COLUMN recording_quality TEXT NULL;
+ALTER TABLE sessions ADD COLUMN input_host TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN input_path_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN input_url_sha256 TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN input_query_keys_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE sessions ADD COLUMN recording_container TEXT NOT NULL DEFAULT 'mkv'
+    CHECK (recording_container IN ('mkv', 'ts'));
+ALTER TABLE sessions ADD COLUMN segment_seconds INTEGER NULL
+    CHECK (segment_seconds IS NULL OR segment_seconds BETWEEN 10 AND 86400);
+ALTER TABLE sessions ADD COLUMN ffmpeg_returncode INTEGER NULL;
+ALTER TABLE sessions ADD COLUMN stop_stage TEXT NULL;
+ALTER TABLE sessions ADD COLUMN last_progress_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE sessions ADD COLUMN recording_error_code TEXT NULL;
+
+ALTER TABLE media_files ADD COLUMN segment_start_seconds REAL NULL;
+ALTER TABLE media_files ADD COLUMN segment_end_seconds REAL NULL;
+ALTER TABLE media_files ADD COLUMN container TEXT NOT NULL DEFAULT '';
+ALTER TABLE media_files ADD COLUMN media_suffix TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS ix_sessions_room_status_started
+    ON sessions(room_key, status, started_at_ms DESC);
+CREATE INDEX IF NOT EXISTS ix_media_files_session_sequence
+    ON media_files(session_id, sequence);
+""",
+    ),
+
 )

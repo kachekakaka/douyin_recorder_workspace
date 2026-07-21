@@ -1,6 +1,6 @@
 # P1D 实施计划：单房间录制 Session 与 recipient 生命周期闭环
 
-状态：**开始实施；真实目标消息仍未现场验证，`live_verified=false`。**  
+状态：**工程实现完成，等待远端 PR CI 与 Review；真实目标消息仍未现场验证，`live_verified=false`。**
 关联：Issue #11、协议事实 Issue #1  
 分支：`feature/p1d-single-room-recording-session`  
 基线：`main@e7e98117a574465061ebe07f4ca623d4ae101b32`

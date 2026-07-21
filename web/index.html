@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="抖音团播录播工作台 P1A">
-  <title>抖音录播工作台 · P1A</title>
+  <meta name="description" content="抖音团播录播工作台 P1D">
+  <title>抖音录播工作台 · P1D</title>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
     <div>
       <p class="kicker">DOUYIN RECORDER WORKSPACE</p>
       <h1>抖音录播工作台</h1>
-      <p>当前阶段：P1A 单房间媒体基础</p>
+      <p>当前阶段：P1D 单房间录制 Session 闭环</p>
     </div>
     <button id="refreshButton" type="button">刷新状态</button>
   </header>
@@ -39,7 +39,7 @@
         <label>协议<select id="roomProtocol"><option value="flv">FLV</option><option value="hls">HLS</option></select></label>
         <button id="roomSubmit" type="submit">保存直播间</button>
       </form>
-      <p class="muted">P1A 的“立即检查”只访问公开直播页并返回脱敏流候选；完整签名 URL 不会写入 API、SQLite 或日志。</p>
+      <p class="muted">“立即检查”只返回脱敏流候选；“开始录制”会把完整签名 URL 仅在当前进程内存中传递给 FFmpeg，不写入 API、SQLite 或日志。</p>
     </section>
 
     <section class="panel">
@@ -48,12 +48,13 @@
     </section>
 
     <section class="panel">
-      <h2>P1A 范围</h2>
+      <h2>P1D 范围</h2>
       <ul>
         <li>房间 CRUD、严格 URL 边界和公开直播页立即检查</li>
         <li>FLV/HLS/清晰度候选的内存解析与脱敏结果</li>
-        <li>FFmpeg argv、progress、segment CSV 与进程监督基础</li>
-        <li>不包含自动长期轮询、多房间调度、真实 recipient 入库或直播后切片</li>
+        <li>显式 start/stop、单房间唯一 active Session、progress 与 segment 持久化</li>
+        <li>recording 与 recipient Waiting/Active/Unknown 共用同一个 session_id</li>
+        <li>不包含自动长期轮询、多房间调度、真实 recipient 自动接入或直播后导出任务</li>
       </ul>
       <p id="protocolNote">目标消息仍未形成经审查现场 fixture；运行 contract 保持 <code>live_verified=false</code>。</p>
       <p id="errorText" class="error" hidden></p>
