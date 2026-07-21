@@ -118,57 +118,21 @@ jobs:
           python tools/recording_session_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p3a-session-smoke"
           python tools/postprocess_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p3a-postprocess-smoke"
 
-      - name: Export workflow-free final patch
+      - name: Build and push workflow-free implementation
         shell: bash
         run: |
           set -euo pipefail
-          final_patch="$RUNNER_TEMP/p3a-final-no-workflows.patch"
-          git diff --binary "$P3A_STAGING_HEAD" -- . \
-            ':(exclude).github/workflows/ci.yml' \
-            ':(exclude).github/workflows/p3a-postprocess-materialize-once.yml' \
-            > "$final_patch"
+          final_patch="$RUNNER_TEMP/p3a-final-no-github.patch"
+          git diff --binary "$P3A_STAGING_HEAD" -- . ':(exclude).github/**' > "$final_patch"
           test -s "$final_patch"
-          ! grep -q '^diff --git a/.github/workflows/' "$final_patch"
-          sha256sum "$final_patch" | tee "$RUNNER_TEMP/p3a-final-patch.sha256"
-
-      - name: Reset and stage workflow-free implementation
-        shell: bash
-        run: |
-          set -euo pipefail
-          final_patch="$RUNNER_TEMP/p3a-final-no-workflows.patch"
+          ! grep -q '^diff --git a/.github/' "$final_patch"
           git reset --hard "$P3A_STAGING_HEAD"
           git apply --index --binary "$final_patch"
-          git status --short | tee "$RUNNER_TEMP/p3a-staged-status.txt"
-          git diff --cached --name-status | tee "$RUNNER_TEMP/p3a-staged-files.txt"
-          ! git diff --cached --name-only | grep -q '^.github/workflows/'
+          test -z "$(git diff --cached --name-only | grep '^.github/' || true)"
           git diff --cached --check
-
-      - name: Commit workflow-free implementation
-        shell: bash
-        run: |
-          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "feat: complete P3A postprocess jobs"
           test -z "$(git status --short)"
-          git rev-parse HEAD | tee "$RUNNER_TEMP/p3a-implementation-head.txt"
-
-      - name: Push workflow-free implementation
-        shell: bash
-        run: |
-          set -euo pipefail
-          git push origin "HEAD:feature/p3a-postprocess-jobs" 2>&1 | tee "$RUNNER_TEMP/p3a-push.txt"
-
-      - name: Upload publish diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: p3a-publish-diagnostics-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/p3a-final-patch.sha256
-            ${{ runner.temp }}/p3a-staged-status.txt
-            ${{ runner.temp }}/p3a-staged-files.txt
-            ${{ runner.temp }}/p3a-implementation-head.txt
-            ${{ runner.temp }}/p3a-push.txt
-          if-no-files-found: ignore
-          retention-days: 3
+          git push origin "HEAD:feature/p3a-postprocess-jobs"
+          git rev-parse HEAD
