@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
           ref: feature/p3a-postprocess-jobs
 
-      - name: Set up Python and Node.js
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -62,22 +62,12 @@ jobs:
           patch_gz="$RUNNER_TEMP/p3a.patch.gz"
           patch="$RUNNER_TEMP/p3a.patch"
           : > "$patch_b64"
-          for sha in \
-            0bbf69f5b50397efc4e524b7accf415a8f535cbe \
-            101c3ed7f99ee9fbf75ba8ee79bcfbedbffa602d
-          do
-            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content \
-              | tr -d '\n' | base64 --decode >> "$patch_b64"
+          for sha in 0bbf69f5b50397efc4e524b7accf415a8f535cbe 101c3ed7f99ee9fbf75ba8ee79bcfbedbffa602d; do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content | tr -d '\n' | base64 --decode >> "$patch_b64"
           done
           cat .github/p3a-payload/02.txt .github/p3a-payload/03.txt >> "$patch_b64"
-          for sha in \
-            e0c112b76e42dcbd9e169afc82b72d9af11c191d \
-            652bee340c42a1a5eb2b252bdeaa6d0860d66105 \
-            ab9502f57e138c25c67f73ad9b604dddf67a1d66 \
-            b937e3d8cc9c1d3805e807d2ca1db9b9ba12ea61
-          do
-            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content \
-              | tr -d '\n' | base64 --decode >> "$patch_b64"
+          for sha in e0c112b76e42dcbd9e169afc82b72d9af11c191d 652bee340c42a1a5eb2b252bdeaa6d0860d66105 ab9502f57e138c25c67f73ad9b604dddf67a1d66 b937e3d8cc9c1d3805e807d2ca1db9b9ba12ea61; do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content | tr -d '\n' | base64 --decode >> "$patch_b64"
           done
           echo "d2b0c6ae47279056407f1c8d8e48a5f5375083bd8241c3c7c45a1b927d7b3b94  $patch_b64" | sha256sum -c -
           test "$(stat -c %s "$patch_b64")" = "39208"
@@ -99,25 +89,21 @@ jobs:
           EOF
           )"
           rm -rf .github/p3a-payload
+          git diff --check
           python - <<'PY'
           import json
           from pathlib import Path
-          contract = json.loads(Path("app/douyin/contracts/provisional_v1.json").read_text(encoding="utf-8"))
-          if contract.get("live_verified") is not False:
+          if json.loads(Path("app/douyin/contracts/provisional_v1.json").read_text(encoding="utf-8")).get("live_verified") is not False:
               raise SystemExit("live_verified must remain false")
           PY
-          git diff --check
 
-      - name: Install locked dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements/dev.lock
-          python -m pip check
-
-      - name: Run complete validation and media smokes
+      - name: Install dependencies and run complete validation
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
           python tools/verify_repository_baseline.py
           python tools/verify_source.py
           python -m compileall -q app tests tools
@@ -132,7 +118,7 @@ jobs:
           python tools/recording_session_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p3a-session-smoke"
           python tools/postprocess_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p3a-postprocess-smoke"
 
-      - name: Build workflow-free implementation commit
+      - name: Export workflow-free final patch
         shell: bash
         run: |
           set -euo pipefail
@@ -143,13 +129,46 @@ jobs:
             > "$final_patch"
           test -s "$final_patch"
           ! grep -q '^diff --git a/.github/workflows/' "$final_patch"
+          sha256sum "$final_patch" | tee "$RUNNER_TEMP/p3a-final-patch.sha256"
+
+      - name: Reset and stage workflow-free implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          final_patch="$RUNNER_TEMP/p3a-final-no-workflows.patch"
           git reset --hard "$P3A_STAGING_HEAD"
           git apply --index --binary "$final_patch"
+          git status --short | tee "$RUNNER_TEMP/p3a-staged-status.txt"
+          git diff --cached --name-status | tee "$RUNNER_TEMP/p3a-staged-files.txt"
           ! git diff --cached --name-only | grep -q '^.github/workflows/'
           git diff --cached --check
+
+      - name: Commit workflow-free implementation
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "feat: complete P3A postprocess jobs"
           test -z "$(git status --short)"
-          git push origin "HEAD:feature/p3a-postprocess-jobs"
-          git rev-parse HEAD
+          git rev-parse HEAD | tee "$RUNNER_TEMP/p3a-implementation-head.txt"
+
+      - name: Push workflow-free implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:feature/p3a-postprocess-jobs" 2>&1 | tee "$RUNNER_TEMP/p3a-push.txt"
+
+      - name: Upload publish diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p3a-publish-diagnostics-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/p3a-final-patch.sha256
+            ${{ runner.temp }}/p3a-staged-status.txt
+            ${{ runner.temp }}/p3a-staged-files.txt
+            ${{ runner.temp }}/p3a-implementation-head.txt
+            ${{ runner.temp }}/p3a-push.txt
+          if-no-files-found: ignore
+          retention-days: 3
