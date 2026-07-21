@@ -47,7 +47,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           test "$(git status --porcelain)" = ""
           test "$(git rev-parse dd6a8b39659ab5d891cd03db1e31c727dec5a7ba^{tree})" = \
-            "$(git rev-parse 0a099f1584f9d3da23394d4b17491b091e468d18^{tree})"
+            "6c238d6bc3c52877a384bcbb33bd5d474645ab16"
 
       - name: Reconstruct verified P2A milestone patch
         env:
