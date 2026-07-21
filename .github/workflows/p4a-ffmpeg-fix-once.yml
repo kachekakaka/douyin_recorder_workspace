@@ -37,16 +37,27 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "ca668f3242caccd0e528d115c1399aa1de1dfbb8"
+          test "$(git rev-parse HEAD^)" = "56797c8326aa34156797e61342b9ef94866d4526"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-ffmpeg-fix-once.yml"
-      - name: Reconstruct and apply reviewed FFmpeg fix
+      - name: Reconstruct and verify reviewed FFmpeg fix
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/git/blobs/f4973b3dea711654c270ecd6b35b1fd241464393" --jq .content \
-            | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/fix.patch.gz.b64"
+          : > "$RUNNER_TEMP/fix.patch.gz.b64"
+          for sha in \
+            ae73df84e298cdaa6d799bd6e8bf70e52444ff81 \
+            64422c7907115eedafffa8398a5ff0e3912dc898 \
+            f0c7d44380c63105d198d5ed885a4b8bcb473fff \
+            7188f4e320c2099f7d8cfeb1b5f6c3b0fec9d8d4 \
+            5f6c0c9f34b29495a4adc48d494e0c72c0c337a6 \
+            298dc3d7244b87f2e6b451be9cbc32dc277c5b52 \
+            b8976bb7471dfc44109614104e502a274af28777
+          do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content \
+              | tr -d '\n' | base64 --decode >> "$RUNNER_TEMP/fix.patch.gz.b64"
+          done
           echo "2e30b59c87364710353a2ae3c3e1020e9225312e7c1b0e824a1ebd60bdf778b8  $RUNNER_TEMP/fix.patch.gz.b64" | sha256sum -c -
           test "$(stat -c %s "$RUNNER_TEMP/fix.patch.gz.b64")" = "6156"
           base64 --decode "$RUNNER_TEMP/fix.patch.gz.b64" > "$RUNNER_TEMP/fix.patch.gz"
@@ -56,10 +67,15 @@ jobs:
           echo "5e2cb61a255d30a76d0e6445c338f9415fecc5ddd9ad7e8d6babfd0346909ccb  $RUNNER_TEMP/fix.patch" | sha256sum -c -
           test "$(stat -c %s "$RUNNER_TEMP/fix.patch")" = "12502"
           ! grep -q '^diff --git a/.github/' "$RUNNER_TEMP/fix.patch"
+      - name: Apply reviewed FFmpeg fix
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git am "$RUNNER_TEMP/fix.patch"
           test "$(git log -1 --pretty=%s)" = "fix: pin retained Windows FFmpeg release"
+          test -z "$(git diff HEAD^ HEAD --name-only | grep '^.github/' || true)"
           git show --check --oneline --no-renames HEAD
       - name: Run complete source validation
         shell: bash
@@ -81,6 +97,5 @@ jobs:
         run: |
           set -euo pipefail
           test -z "$(git status --short)"
-          test -z "$(git diff HEAD^ HEAD --name-only | grep '^.github/' || true)"
           git push origin "HEAD:feature/p4a-release-packaging"
           git rev-parse HEAD
