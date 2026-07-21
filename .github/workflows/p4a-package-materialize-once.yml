@@ -43,10 +43,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "ee3b2e467c7eed65a9fb1418e0cdf61cfe65c93e"
+          test "$(git rev-parse HEAD^)" = "a3fa63b0f52c470c1b341fb5928467bab6f3e968"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-package-materialize-once.yml"
           test "$(git rev-parse c62768351f32fa044cfb27b83775bdc5438a3054^{tree})" = \
-            "$(git rev-parse 73fb1a078a3e2ce60b04859cc1d08a9cd62660ff^{tree})"
+            "567186589d3de74457a5411edc573d286ce1ccb8"
 
       - name: Reconstruct and apply reviewed P4A business patch
         env:
