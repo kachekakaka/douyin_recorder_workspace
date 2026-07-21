@@ -58,17 +58,46 @@ jobs:
       - name: Build deterministic Windows package
         shell: pwsh
         run: |
-          ./scripts/release/build-windows-package.ps1 `
-            -SourceRoot $PWD `
-            -OutputDir "$env:RUNNER_TEMP\windows-assets" `
-            -SourceCommit "$(git rev-parse HEAD)"
+          $log = "$env:RUNNER_TEMP\build-windows-package.log"
+          try {
+            & ./scripts/release/build-windows-package.ps1 `
+              -SourceRoot $PWD `
+              -OutputDir "$env:RUNNER_TEMP\windows-assets" `
+              -SourceCommit "$(git rev-parse HEAD)" *>&1 |
+              Tee-Object -FilePath $log
+            if ($LASTEXITCODE -ne 0) { throw "build script exited with $LASTEXITCODE" }
+          } catch {
+            ($_ | Out-String) | Tee-Object -FilePath $log -Append
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+            throw
+          }
 
       - name: Verify clean extraction and portable runtime
         shell: pwsh
         run: |
-          ./scripts/release/verify-windows-package.ps1 `
-            -SourceRoot $PWD `
-            -AssetDir "$env:RUNNER_TEMP\windows-assets"
+          $log = "$env:RUNNER_TEMP\verify-windows-package.log"
+          try {
+            & ./scripts/release/verify-windows-package.ps1 `
+              -SourceRoot $PWD `
+              -AssetDir "$env:RUNNER_TEMP\windows-assets" *>&1 |
+              Tee-Object -FilePath $log
+            if ($LASTEXITCODE -ne 0) { throw "verification script exited with $LASTEXITCODE" }
+          } catch {
+            ($_ | Out-String) | Tee-Object -FilePath $log -Append
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+            throw
+          }
+
+      - name: Upload Windows package diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-diagnostics-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/build-windows-package.log
+            ${{ runner.temp }}/verify-windows-package.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload Windows release assets
         uses: actions/upload-artifact@v4
