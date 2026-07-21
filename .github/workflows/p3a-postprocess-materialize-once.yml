@@ -161,13 +161,21 @@ jobs:
             --duration 2 \
             --output-dir "$RUNNER_TEMP/p3a-postprocess-smoke"
 
-      - name: Commit cleanup and push verified P3A tree
+      - name: Stage and commit P3A cleanup
         shell: bash
         run: |
           set -euo pipefail
           git add -A
+          git status --short
+          git diff --cached --name-status
           git diff --cached --check
           git commit -m "chore: remove temporary P3A materializer"
-          test -z "$(git status --short)"
+          git status --short
+          git rev-parse HEAD
+
+      - name: Push verified P3A tree
+        shell: bash
+        run: |
+          set -euo pipefail
           git push origin "HEAD:feature/p3a-postprocess-jobs"
           git rev-parse HEAD
