@@ -41,3 +41,8 @@ button.danger { background: #a53030; }
 .recording-active { color: #167052; font-weight: 700; }
 .worker-active { color: #235a8a; font-weight: 700; }
 button.compact { margin-top: auto; align-self: flex-start; }
+.job-list { display: grid; gap: 12px; }
+.job-card { padding: 18px; border: 1px solid #dbe4eb; border-radius: 14px; }
+.job-card p { margin: 9px 0; }
+.job-card ul { color: #607286; overflow-wrap: anywhere; }
+button.export { background: #6b4fa1; }

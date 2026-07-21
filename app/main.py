@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import manager_router, recipient_router, recording_router, rooms_router
+from app.api import jobs_router, manager_router, recipient_router, recording_router, rooms_router
 from app.paths import ROOT
 from app.security import validate_request_boundary
 from app.settings import Settings
@@ -38,6 +38,7 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
     app.state.app_state = app_state
     app.include_router(rooms_router)
     app.include_router(manager_router)
+    app.include_router(jobs_router)
     app.include_router(recipient_router)
     app.include_router(recording_router)
 
@@ -88,14 +89,15 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
             "ok": True,
             "data": {
                 "version": __version__,
-                "phase": "P2A",
+                "phase": "P3A",
                 "loopback_only": True,
                 "authentication_implemented": False,
                 "protocol_live_verified": app_state.protocol_contract.live_verified,
                 "limitations": [
                     "目标推荐收礼人消息仍未形成经审查的现场 fixture",
                     "P2A 提供单进程多房间自动检查、自动录制与故障隔离",
-                    "真实 IM 自动接入、后处理导出与公网管理尚未启用",
+                    "P3A 提供单进程持久化后处理任务与 recipient 区间导出",
+                    "真实 IM 自动接入与公网管理尚未启用",
                 ],
                 **data,
             },

@@ -11,6 +11,7 @@ from app.douyin.live_page import DouyinLivePageClient
 from app.douyin.recipient import RecipientContract
 from app.douyin.stream_resolver import DouyinStreamResolver
 from app.manager import RoomManager
+from app.postprocess import ExportPlanner, PostprocessRepository, PostprocessService
 from app.recording import RecordingSessionRepository, SingleRoomRecordingService, SupervisorFactory
 from app.rooms import RoomRepository, RoomService
 from app.runtime import ToolStatus, check_tool
@@ -30,6 +31,8 @@ class AppState:
     recording_repository: RecordingSessionRepository
     recording_service: SingleRoomRecordingService
     room_manager: RoomManager
+    postprocess_repository: PostprocessRepository
+    postprocess_service: PostprocessService
     runtime_instance_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     ffmpeg: ToolStatus | None = None
@@ -75,6 +78,17 @@ class AppState:
             offline_confirmations=settings.offline_confirmations,
             max_parallel_checks=settings.max_parallel_checks,
         )
+        postprocess_repository = PostprocessRepository(database)
+        postprocess_service = PostprocessService.create_default(
+            repository=postprocess_repository,
+            planner=ExportPlanner(database),
+            ffmpeg_path=settings.ffmpeg_path,
+            records_dir=settings.paths.records_dir,
+            userdata_dir=settings.paths.userdata_dir,
+            runtime_instance_id=runtime_instance_id,
+            enabled=settings.postprocess_enabled,
+            max_attempts=settings.postprocess_max_attempts,
+        )
         return cls(
             settings=settings,
             database=database,
@@ -86,6 +100,8 @@ class AppState:
             recording_repository=recording_repository,
             recording_service=recording_service,
             room_manager=room_manager,
+            postprocess_repository=postprocess_repository,
+            postprocess_service=postprocess_service,
             runtime_instance_id=runtime_instance_id,
             started_at_ms=started_at_ms,
         )
@@ -97,6 +113,7 @@ class AppState:
             (self.runtime_instance_id, __version__, self.started_at_ms),
         )
         await self.recording_service.recover()
+        await self.postprocess_service.start()
         await self.refresh_tools()
         await self.room_manager.start()
 
@@ -127,6 +144,7 @@ class AppState:
             "ffprobe": ffprobe.to_dict(),
             "protocol_contract": self.protocol_contract.to_public_dict(),
             "room_manager": (await self.room_manager.get_status()).to_public_dict(),
+            "postprocess": await self.postprocess_service.status(),
         }
 
     async def stop(self) -> None:
@@ -134,6 +152,7 @@ class AppState:
         try:
             await self.room_manager.close()
             await self.recording_service.close()
+            await self.postprocess_service.close()
             await self.database.execute(
                 "UPDATE runtime_instances SET ended_at_ms = ? WHERE id = ?",
                 (ended_at_ms, self.runtime_instance_id),

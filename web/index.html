@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="抖音团播录播工作台 P2A">
-  <title>抖音录播工作台 · P2A</title>
+  <meta name="description" content="抖音团播录播工作台 P3A">
+  <title>抖音录播工作台 · P3A</title>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
     <div>
       <p class="kicker">DOUYIN RECORDER WORKSPACE</p>
       <h1>抖音录播工作台</h1>
-      <p>当前阶段：P2A 多房间自动录制编排</p>
+      <p>当前阶段：P3A recipient 区间后处理导出</p>
     </div>
     <button id="refreshButton" type="button">刷新状态</button>
   </header>
@@ -26,6 +26,7 @@
       <article class="card"><span>SQLite</span><strong id="databaseState">-</strong><small id="databasePath">-</small></article>
       <article class="card"><span>直播间</span><strong id="roomCount">0</strong><small>当前保存的单平台录制源</small></article>
       <article class="card"><span>RoomManager</span><strong id="managerState">-</strong><small id="managerDetail">-</small><button id="managerReconcile" class="secondary compact" type="button">立即协调</button></article>
+      <article class="card"><span>后处理任务</span><strong id="jobCount">0</strong><small>queued / running / succeeded / failed / canceled</small></article>
       <article class="card"><span>FFmpeg</span><strong id="ffmpegState">-</strong><small id="ffmpegVersion">-</small></article>
       <article class="card"><span>ffprobe</span><strong id="ffprobeState">-</strong><small id="ffprobeVersion">-</small></article>
       <article class="card"><span>推荐收礼人 Contract</span><strong id="protocolState">-</strong><small id="protocolHash">-</small></article>
@@ -49,7 +50,13 @@
     </section>
 
     <section class="panel">
-      <h2>P2A 范围</h2>
+      <h2>后处理任务</h2>
+      <div id="jobList" class="job-list" aria-live="polite"></div>
+      <p class="muted">输出文件名仅使用 interval ID、状态和 recipient key hash；不显示 recipient 明文。任务运行中可取消，失败或取消后可在最大次数内重试。</p>
+    </section>
+
+    <section class="panel">
+      <h2>P3A 范围</h2>
       <ul>
         <li>房间 CRUD、严格 URL 边界和公开直播页立即检查</li>
         <li>FLV/HLS/清晰度候选的内存解析与脱敏结果</li>
@@ -57,7 +64,9 @@
         <li>每个 enabled room 一个串行 worker，全局限制并发检查</li>
         <li>live 自动确保录制；连续 offline 达阈值停止；unknown/blocked/error 保持媒体</li>
         <li>recording 与 recipient Waiting/Active/Unknown 共用同一个 session_id</li>
-        <li>不包含真实 recipient 自动接入、直播后导出任务、多机器或公网管理</li>
+        <li>持久化后处理任务、recipient interval 导出、retry/cancel 与重启恢复</li>
+        <li>FFmpeg concat/trim/stream-copy，使用 .writing 后原子落盘</li>
+        <li>不包含真实 recipient 自动接入、转码优化、多机器或公网管理</li>
       </ul>
       <p id="protocolNote">目标消息仍未形成经审查现场 fixture；运行 contract 保持 <code>live_verified=false</code>。</p>
       <p id="errorText" class="error" hidden></p>

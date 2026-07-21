@@ -103,7 +103,7 @@ jobs:
               "late_event_count": 1,
               "interval_count": 7,
           }
-          if report.get("schema_version") != 5:
+          if report.get("schema_version") != 6:
               raise SystemExit("recipient database replay schema mismatch")
           if report.get("contract_live_verified") is not False:
               raise SystemExit("recipient database replay changed live_verified")
@@ -120,11 +120,13 @@ jobs:
                   raise SystemExit(f"recipient database replay leaked {forbidden}")
           PY
 
-      - name: Install FFmpeg for supervisor smoke
+      - name: Ensure FFmpeg for media smoke tests
         if: matrix.python-version == '3.12'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
           ffmpeg -hide_banner -version
           ffprobe -hide_banner -version
 
@@ -148,6 +150,16 @@ jobs:
             --duration 2 \
             --output-dir "$RUNNER_TEMP/recording-session-smoke" \
             2>&1 | tee "$RUNNER_TEMP/recording-session-smoke.log"
+
+      - name: P3A postprocess local smoke
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/postprocess_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/postprocess-smoke" \
+            2>&1 | tee "$RUNNER_TEMP/postprocess-smoke.log"
 
       - name: Create and restore source recovery assets
         if: matrix.python-version == '3.12'
@@ -174,6 +186,7 @@ jobs:
             ${{ runner.temp }}/ffmpeg-smoke-output.log
             ${{ runner.temp }}/ffmpeg-smoke/ffmpeg.log
             ${{ runner.temp }}/recording-session-smoke.log
+            ${{ runner.temp }}/postprocess-smoke.log
             ${{ runner.temp }}/recovery.log
           if-no-files-found: ignore
           retention-days: 7

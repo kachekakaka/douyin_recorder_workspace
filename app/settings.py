@@ -164,6 +164,8 @@ class Settings:
     poll_jitter_seconds: int
     offline_confirmations: int
     max_parallel_checks: int
+    postprocess_enabled: bool
+    postprocess_max_attempts: int
 
     @property
     def public_url(self) -> str:
@@ -232,6 +234,7 @@ class Settings:
         raw = sync_config(template_path, config_path)
         server = raw.get("server") if isinstance(raw.get("server"), dict) else {}
         poll = raw.get("poll") if isinstance(raw.get("poll"), dict) else {}
+        jobs = raw.get("jobs") if isinstance(raw.get("jobs"), dict) else {}
 
         host = env.get("DOUYIN_RECORDER_HOST", str(server.get("host", "127.0.0.1"))).strip()
         if not host or any(char.isspace() for char in host):
@@ -277,6 +280,24 @@ class Settings:
             minimum=1,
             maximum=100,
         )
+        postprocess_enabled = _bool_value(
+            jobs.get("enabled", False),
+            "jobs.enabled",
+        )
+        job_concurrency = _int_value(
+            jobs.get("concurrency", 1),
+            "jobs.concurrency",
+            minimum=1,
+            maximum=1,
+        )
+        if job_concurrency != 1:
+            raise SettingsError("P3A 只支持单进程单 postprocess worker")
+        postprocess_max_attempts = _int_value(
+            jobs.get("max_attempts", 3),
+            "jobs.max_attempts",
+            minimum=1,
+            maximum=10,
+        )
 
         contract_path = Path(
             env.get(
@@ -299,4 +320,6 @@ class Settings:
             poll_jitter_seconds=poll_jitter_seconds,
             offline_confirmations=offline_confirmations,
             max_parallel_checks=max_parallel_checks,
+            postprocess_enabled=postprocess_enabled,
+            postprocess_max_attempts=postprocess_max_attempts,
         )
