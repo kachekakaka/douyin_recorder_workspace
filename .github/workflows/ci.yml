@@ -120,11 +120,13 @@ jobs:
                   raise SystemExit(f"recipient database replay leaked {forbidden}")
           PY
 
-      - name: Install FFmpeg for supervisor smoke
+      - name: Ensure FFmpeg for media smoke tests
         if: matrix.python-version == '3.12'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
           ffmpeg -hide_banner -version
           ffprobe -hide_banner -version
 
