@@ -20,7 +20,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.head_ref == 'feature/p2a-multi-room-manager'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout exact branch head
         uses: actions/checkout@v4
@@ -45,29 +45,87 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "ae61320d525bdaa2593fe88034add36f882240e9"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p2a-room-manager-materialize-once.yml"
+          test "$(git status --porcelain)" = ""
+          test "$(git rev-parse dd6a8b39659ab5d891cd03db1e31c727dec5a7ba^{tree})" = \
+            "$(git rev-parse 0a099f1584f9d3da23394d4b17491b091e468d18^{tree})"
 
-      - name: Reconstruct reviewed P2A payload
+      - name: Reconstruct verified P2A milestone patch
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          payload="$RUNNER_TEMP/p2a-payload.tar.gz"
-          gh api "repos/$GITHUB_REPOSITORY/git/blobs/REPLACE_PAYLOAD_BLOB" --jq .content \
-            | tr -d '\n' | base64 --decode > "$payload"
-          echo "22c7d0e4ce5208473f120097bd2433e3faa5c850e0640906d9913e1a48e92bba  $payload" | sha256sum -c -
-          test "$(stat -c %s "$payload")" = "33394"
-          tar -xzf "$payload"
+          patch_b64="$RUNNER_TEMP/p2a.patch.gz.b64"
+          patch_gz="$RUNNER_TEMP/p2a.patch.gz"
+          patch="$RUNNER_TEMP/p2a.patch"
+          : > "$patch_b64"
+          for sha in \
+            c6852d135af9146aab080e5ad5e70d68fd8474b1 \
+            989dededb3b2597397aed602fae3ec3091876591 \
+            416241aea70eff764d0b1b0fa51742321e6c8090 \
+            9a45539709a7c3e941f4ab2b7d0efdcb111ec9d9 \
+            c30d0e6113dc4c1d8aeec015002e89523a6694d2 \
+            f1452b0f14b10c5dd3571062c2c4a97f01f8e6dd \
+            8466fb2b923cc93bb355bdfa1c13f836b5d7842b \
+            92fa427c4040fc8fab7acfc88c274afada196adc \
+            603c5e24a5a21b39e926c8742e1b1a5eb0df0b81 \
+            73ed82a17c606fba187e914411d7c590de2838a0 \
+            8be0690a9d184d663b53484e5c8b6463db331e3a \
+            a53dded8e664b9ea6592e35b19f788731586c3b9 \
+            a34f9883370f7801c9f0b2f102fbd507572a5d83 \
+            42452d82c0dbae0eafaac8b18af08fb9afc1477f \
+            9626d34b4c0bcb9d03ad109737c817977132809b \
+            4ccfd86e5e662d5334c0bdd11e479bd6e628cfbc \
+            d38a10f718eee8c6d25918f182cd8ac998f28f15 \
+            514b9024560eff9ae40e610bf6d18076358d700a
+          do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content \
+              | tr -d '\n' | base64 --decode >> "$patch_b64"
+          done
+          echo "8071dbacfb54e9d07111f4440032c73bbb237d57a38486c31ac240faf571ce7a  $patch_b64" \
+            | sha256sum -c -
+          base64 --decode "$patch_b64" > "$patch_gz"
+          echo "4f3b3b5e16f8ce4464e94eeb62a0420b7f20ab71fee7d32aef420c1688a079af  $patch_gz" \
+            | sha256sum -c -
+          test "$(stat -c %s "$patch_gz")" = "18884"
+          gzip -dc "$patch_gz" > "$patch"
+          echo "744dff17c0da524aca578ade63209e2fcee5627509f63be0f1a927193fac74c4  $patch" \
+            | sha256sum -c -
+          test "$(stat -c %s "$patch")" = "70133"
+
+      - name: Apply four reviewed P2A milestones
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git am "$RUNNER_TEMP/p2a.patch"
+          test "$(git log -4 --pretty=%s)" = "$(cat <<'EOF'
+          docs: finalize P2A review and limitations
+          feat: add multi-room status controls to web UI
+          feat: reconcile room changes with automatic recording
+          feat: add RoomManager worker lifecycle
+          EOF
+          )"
+
+      - name: Remove temporary publisher state
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf \
+            .github/p2a-payload \
+            .github/p2a-payload-pointer.txt \
+            .github/workflows/p2a-room-manager-materialize-once.yml
+          git diff --check
           python - <<'PY'
           import json
           from pathlib import Path
-          contract = json.loads(Path('app/douyin/contracts/provisional_v1.json').read_text(encoding='utf-8'))
-          if contract.get('live_verified') is not False:
-              raise SystemExit('live_verified must remain false')
+          contract = json.loads(
+              Path("app/douyin/contracts/provisional_v1.json").read_text(encoding="utf-8")
+          )
+          if contract.get("live_verified") is not False:
+              raise SystemExit("live_verified must remain false")
           PY
-          git diff --check
 
       - name: Install locked dependencies
         run: |
@@ -85,25 +143,30 @@ jobs:
           python -m ruff check --no-cache app tests tools
           python -m pytest -q -p no:cacheprovider --tb=short
           python tools/replay_recipient_fixture.py --quiet
-          python tools/replay_recipient_fixture_to_db.py --output "$RUNNER_TEMP/recipient-db.json"
-          while IFS= read -r -d '' file; do node --check "$file"; done < <(find web -type f -name '*.js' -print0)
+          python tools/replay_recipient_fixture_to_db.py \
+            --output "$RUNNER_TEMP/recipient-db.json"
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find web -type f -name '*.js' -print0)
 
       - name: Install FFmpeg and run inherited smoke tests
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
-          python tools/ffmpeg_supervisor_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p2a-supervisor-smoke"
-          python tools/recording_session_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p2a-session-smoke"
+          python tools/ffmpeg_supervisor_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/p2a-supervisor-smoke"
+          python tools/recording_session_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/p2a-session-smoke"
 
-      - name: Stage and commit exact P2A tree
+      - name: Commit cleanup and push verified P2A tree
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/p2a-room-manager-materialize-once.yml
           git add -A
           git diff --cached --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "feat: complete P2A multi-room manager"
+          git commit -m "chore: remove temporary P2A materializer"
           test -z "$(git status --short)"
           git push origin "HEAD:feature/p2a-multi-room-manager"
+          git rev-parse HEAD
