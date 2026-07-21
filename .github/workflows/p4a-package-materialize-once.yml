@@ -43,12 +43,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "a3fa63b0f52c470c1b341fb5928467bab6f3e968"
+          test "$(git rev-parse HEAD^)" = "7a822e2c47490898e86e9f5176a0c16cbd3fac87"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-package-materialize-once.yml"
           test "$(git rev-parse c62768351f32fa044cfb27b83775bdc5438a3054^{tree})" = \
             "567186589d3de74457a5411edc573d286ce1ccb8"
 
-      - name: Reconstruct and apply reviewed P4A business patch
+      - name: Reconstruct and verify P4A patch bytes
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -78,10 +78,21 @@ jobs:
           echo "0e8e0a13ef2c4c13b6937db64baa5613180ce5d89beb291ae71aeb1383ffe161  $patch" | sha256sum -c -
           test "$(stat -c %s "$patch")" = "60025"
           ! grep -q '^diff --git a/.github/' "$patch"
+
+      - name: Apply reviewed P4A business commit
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git am "$patch"
+          git am "$RUNNER_TEMP/p4a.patch"
           test "$(git log -1 --pretty=%s)" = "feat: build deterministic Windows portable release"
+          test -z "$(git diff HEAD^ HEAD --name-only | grep '^.github/' || true)"
+
+      - name: Verify P4A contract and release lock
+        shell: bash
+        run: |
+          set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
@@ -122,6 +133,5 @@ jobs:
         run: |
           set -euo pipefail
           test -z "$(git status --short)"
-          test -z "$(git diff HEAD^ HEAD --name-only | grep '^.github/' || true)"
           git push origin "HEAD:feature/p4a-release-packaging"
           git rev-parse HEAD
