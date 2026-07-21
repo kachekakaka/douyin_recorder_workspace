@@ -50,7 +50,7 @@ jobs:
           test -f .github/p3a-payload/02.txt
           test -f .github/p3a-payload/03.txt
           test "$(git rev-parse d492e0e881f4fe39692e1d0c979554f87e6a4b88^{tree})" = \
-            "$(git rev-parse cc1a88de7ded9e613b721b540c6e0a5a5d680842^{tree})"
+            "fa8b1ccbb86c6468a0929f4e10bc12886481d8bf"
 
       - name: Reconstruct verified P3A milestone patch
         env:
