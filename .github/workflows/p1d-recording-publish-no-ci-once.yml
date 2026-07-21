@@ -1,0 +1,97 @@
+name: P1D publish recording source without CI once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/p1d-recording-publish-no-ci-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p1d-recording-publish-no-ci-once
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish P1D source tree before CI update
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feature/p1d-single-room-recording-session'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p1d-single-room-recording-session
+
+      - name: Verify publisher commit
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD^)" = "9e2935b1fb75cd10988b124edf32c971358acbfd"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1d-recording-publish-no-ci-once.yml"
+
+      - name: Restore exact reviewed payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          b64="$RUNNER_TEMP/p1d.b64"
+          archive="$RUNNER_TEMP/p1d.tar.gz"
+          : > "$b64"
+          for sha in \
+            93e865c94cd20e50d70b2ad5ad5cdfda1ec4536e \
+            203a2514b3e7663432a142ef4913a1926eadd6d5 \
+            ed041fd5299ea9f9c7261a1fd6c202f72f2ac2ff \
+            26853115c2746c941bb512a55a8937859f02cf5e \
+            7bf74e65c3a63419851f3b9da243cad10b176e50 \
+            8fff602e642e36df640aed1e5fe826af64ff4249 \
+            908d2c6c9884ff78029f0e2ac5c760ac88c7ccf4 \
+            89cf56b494cdadd2f3cdbf69069d3fa1acace9d2 \
+            4064fe4e80503c03f5ae89a8fd5d6d04c4a34ba4 \
+            612f229b4b2995eea0b61542fe7a34b18c27eb8e \
+            1b9db7f18bd731c7569c77b2203604754752c8cc
+          do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content \
+              | tr -d '\n' | base64 --decode >> "$b64"
+          done
+          base64 --decode "$b64" > "$archive"
+          echo "66a3494f80de8280b09619972b400cb31886c61f325a575ca0cd9a9adf3bde8e  $archive" \
+            | sha256sum -c -
+          test "$(tar -tzf "$archive" | wc -l)" = "31"
+          tar -xzf "$archive"
+          git checkout HEAD -- .github/workflows/ci.yml
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          contract = json.loads(
+              Path("app/douyin/contracts/provisional_v1.json").read_text(encoding="utf-8")
+          )
+          if contract.get("live_verified") is not False:
+              raise SystemExit("live_verified must remain false")
+          PY
+          git diff --check
+
+      - name: Commit source tree
+        run: |
+          set -euo pipefail
+          rm .github/workflows/p1d-recording-materialize-once.yml
+          rm .github/workflows/p1d-recording-retry-once.yml
+          rm .github/workflows/p1d-recording-publish-once.yml
+          rm .github/workflows/p1d-recording-finalize-once.yml
+          rm .github/workflows/p1d-recording-publish-no-ci-once.yml
+          git add -A -- .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: complete P1D single-room recording source"
+          test -z "$(git status --short)"
+          git rev-parse HEAD
+
+      - name: Push source tree
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:feature/p1d-single-room-recording-session"
+          git rev-parse HEAD
