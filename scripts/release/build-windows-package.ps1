@@ -88,12 +88,8 @@ New-Item -ItemType Directory -Force -Path $sitePackages | Out-Null
 python -m pip install --disable-pip-version-check --no-compile --only-binary=:all: --target $sitePackages -r (Join-Path $SourceRoot "requirements\runtime.lock")
 if ($LASTEXITCODE -ne 0) { throw "runtime dependency installation failed" }
 
-$checksums = Join-Path $downloads "ffmpeg-checksums.sha256"
-Get-VerifiedFile -Url ([string]$lock.ffmpeg.checksums_url) -Destination $checksums -Sha256 ([string]$lock.ffmpeg.checksums_sha256)
 $assetName = [string]$lock.ffmpeg.asset
-$checksumLine = Get-Content -LiteralPath $checksums | Where-Object { $_ -match ("[ *]" + [regex]::Escape($assetName) + "$") } | Select-Object -First 1
-if (!$checksumLine) { throw "FFmpeg asset is absent from pinned checksums" }
-$assetSha = ($checksumLine -split '\s+')[0].ToLowerInvariant()
+$assetSha = [string]$lock.ffmpeg.asset_sha256
 if ($assetSha -notmatch '^[0-9a-f]{64}$') { throw "FFmpeg asset checksum is invalid" }
 $ffmpegZip = Join-Path $downloads $assetName
 Get-VerifiedFile -Url ([string]$lock.ffmpeg.asset_url) -Destination $ffmpegZip -Sha256 $assetSha
@@ -110,7 +106,7 @@ Copy-Item -Path (Join-Path $ffmpegExe.DirectoryName "*") -Destination $ffmpegBin
 
 $licenseRoot = Join-Path $stage "licenses"
 New-Item -ItemType Directory -Force -Path (Join-Path $licenseRoot "ffmpeg") | Out-Null
-Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\licenses\BtbN-FFmpeg-Builds-MIT.txt") -Destination $licenseRoot
+Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\licenses\Gyan-FFmpeg-Build-NOTICE.md") -Destination $licenseRoot
 Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\licenses\FFmpeg-NOTICE.md") -Destination $licenseRoot
 $licenseCandidates = Get-ChildItem -LiteralPath $ffmpegExtract -Recurse -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE|README)' }
 if (!$licenseCandidates) { throw "FFmpeg archive contains no license/notice files" }

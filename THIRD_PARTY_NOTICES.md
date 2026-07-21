@@ -44,4 +44,4 @@ P4A 固定 Python 3.13.14 Windows embeddable x64 package，来源与 SHA-256 记
 
 ## FFmpeg
 
-P4A 固定 `BtbN/FFmpeg-Builds` 的 `autobuild-2026-05-27-14-06` LGPL shared Windows x64 资产。构建先校验固定 checksums 文件的 SHA-256，再按其中记录校验 FFmpeg ZIP。包内保留归档自带许可证/NOTICE，并附带 BtbN MIT 与 FFmpeg LGPL notice。项目不修改 FFmpeg。
+P4A 固定 Gyan FFmpeg 7.1 full Windows x64 资产；下载 URL 与 SHA-256 采用 Microsoft winget 官方清单验证值并记录在 `packaging/release-lock.json`。该构建按 GPL-3.0-or-later 分发，包内保留归档自带许可证/NOTICE、构建提供方说明和对应源码地址。项目不修改 FFmpeg。

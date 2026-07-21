@@ -8,13 +8,14 @@
     "license": "Python-2.0"
   },
   "ffmpeg": {
-    "provider": "BtbN/FFmpeg-Builds",
-    "tag": "autobuild-2026-05-27-14-06",
-    "asset": "ffmpeg-master-latest-win64-lgpl-shared.zip",
-    "asset_url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-27-14-06/ffmpeg-master-latest-win64-lgpl-shared.zip",
-    "checksums_url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-27-14-06/checksums.sha256",
-    "checksums_sha256": "92c60c99b914e5ee60c8178a107a0a1c1ffec62064802971453bc33d3220d93f",
-    "license": "LGPL-2.1-or-later"
+    "provider": "GyanD/codexffmpeg",
+    "tag": "7.1",
+    "asset": "ffmpeg-7.1-full_build.zip",
+    "asset_url": "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-full_build.zip",
+    "asset_sha256": "fa074a46b7bb862e37aa27ccd0522d22a1fe90aec3a950c8e0c0c8622e0a03d1",
+    "license": "GPL-3.0-or-later",
+    "source_url": "https://github.com/FFmpeg/FFmpeg/tree/n7.1",
+    "build_information_url": "https://www.gyan.dev/ffmpeg/builds/"
   },
   "assets": {
     "windows_zip": "douyin-recorder-v0.1.0-windows-x64.zip",

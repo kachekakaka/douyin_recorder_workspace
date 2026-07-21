@@ -69,7 +69,7 @@ _REQUIRED_PAYLOAD_FILES = {
     "tools/ffmpeg_supervisor_smoke.py",
     "tools/recording_session_smoke.py",
     "tools/postprocess_smoke.py",
-    "licenses/BtbN-FFmpeg-Builds-MIT.txt",
+    "licenses/Gyan-FFmpeg-Build-NOTICE.md",
     "licenses/FFmpeg-NOTICE.md",
 }
 _MANIFEST_EXCLUDED = {"windows-manifest.json", "windows-SHA256SUMS.txt"}
@@ -111,22 +111,19 @@ def load_release_lock(path: Path) -> dict[str, Any]:
     ffmpeg = value["ffmpeg"]
     for label, item in (
         ("python.sha256", python.get("sha256")),
-        ("ffmpeg.checksums_sha256", ffmpeg.get("checksums_sha256")),
+        ("ffmpeg.asset_sha256", ffmpeg.get("asset_sha256")),
     ):
         if not isinstance(item, str) or not _HASH_RE.fullmatch(item):
             raise ReleaseError(f"{label} 必须是小写 SHA-256")
     for label, url in (
         ("python.url", python.get("url")),
         ("ffmpeg.asset_url", ffmpeg.get("asset_url")),
-        ("ffmpeg.checksums_url", ffmpeg.get("checksums_url")),
     ):
         if not isinstance(url, str) or not url.startswith("https://"):
             raise ReleaseError(f"{label} 必须是 HTTPS URL")
     tag = ffmpeg.get("tag")
     if not isinstance(tag, str) or f"/download/{tag}/" not in ffmpeg["asset_url"]:
         raise ReleaseError("FFmpeg asset URL 必须固定到 release tag")
-    if f"/download/{tag}/" not in ffmpeg["checksums_url"]:
-        raise ReleaseError("FFmpeg checksums URL 必须固定到相同 release tag")
     return value
 
 

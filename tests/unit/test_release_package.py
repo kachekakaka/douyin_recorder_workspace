@@ -45,9 +45,9 @@ def _package(root: Path) -> Path:
         "tools/ffmpeg_supervisor_smoke.py": "pass\n",
         "tools/recording_session_smoke.py": "pass\n",
         "tools/postprocess_smoke.py": "pass\n",
-        "licenses/BtbN-FFmpeg-Builds-MIT.txt": "MIT\n",
-        "licenses/FFmpeg-NOTICE.md": "LGPL\n",
-        "licenses/ffmpeg/LICENSE.txt": "LGPL\n",
+        "licenses/Gyan-FFmpeg-Build-NOTICE.md": "Gyan FFmpeg build notice\n",
+        "licenses/FFmpeg-NOTICE.md": "GPL\n",
+        "licenses/ffmpeg/LICENSE.txt": "GPL\n",
         "payload.txt": "hello\n",
     }
     for name, content in files.items():
@@ -116,7 +116,8 @@ def test_release_workflow_and_portable_scripts_keep_required_gates() -> None:
     assert "--verify-tag" in workflow
     assert "verify-windows-package.ps1" in workflow
     assert "source.bundle" in workflow
-    assert "ffmpeg.checksums_url" in build
+    assert "ffmpeg.asset_sha256" in build
+    assert "ffmpeg.checksums_url" not in build
     assert "config\\config.json.default" in build
     assert "config\\config.json\"" not in build
     assert "runtime\\python\\python.exe" in portable_start

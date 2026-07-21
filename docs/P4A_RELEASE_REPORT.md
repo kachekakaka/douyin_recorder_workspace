@@ -8,7 +8,7 @@
 
 - 项目、应用和 release lock 统一版本 `0.1.0`；
 - Python 3.13.14 embeddable x64 固定 URL 与 SHA-256；
-- BtbN FFmpeg fixed tag、fixed checksums SHA-256 与 LGPL shared asset；
+- Gyan FFmpeg 7.1 fixed release asset、Microsoft winget 验证 SHA-256 与 GPL notice；
 - 便携 start/verify/backup 和回环 health smoke；
 - runtime dependencies 安装到包内 `Lib/site-packages`；
 - Python dependency/license 清单；
