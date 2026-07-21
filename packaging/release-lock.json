@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "release_version": "0.1.0",
+  "python": {
+    "version": "3.13.14",
+    "url": "https://www.python.org/ftp/python/3.13.14/python-3.13.14-embed-amd64.zip",
+    "sha256": "90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907",
+    "license": "Python-2.0"
+  },
+  "ffmpeg": {
+    "provider": "BtbN/FFmpeg-Builds",
+    "tag": "autobuild-2026-05-27-14-06",
+    "asset": "ffmpeg-master-latest-win64-lgpl-shared.zip",
+    "asset_url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-27-14-06/ffmpeg-master-latest-win64-lgpl-shared.zip",
+    "checksums_url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-27-14-06/checksums.sha256",
+    "checksums_sha256": "92c60c99b914e5ee60c8178a107a0a1c1ffec62064802971453bc33d3220d93f",
+    "license": "LGPL-2.1-or-later"
+  },
+  "assets": {
+    "windows_zip": "douyin-recorder-v0.1.0-windows-x64.zip",
+    "source_zip": "douyin-recorder-v0.1.0-source.zip",
+    "source_bundle": "douyin-recorder-v0.1.0-source.bundle"
+  }
+}

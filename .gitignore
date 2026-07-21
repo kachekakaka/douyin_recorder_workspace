@@ -66,3 +66,7 @@ vendor/runtime/
 vendor/windows/*.pack
 vendor/windows/*.exe
 vendor/windows/ffmpeg/
+
+# Tracked release automation
+!scripts/release/
+!scripts/release/**

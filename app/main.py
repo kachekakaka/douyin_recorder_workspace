@@ -89,14 +89,15 @@ def create_app(*, settings: Settings | None = None, state: AppState | None = Non
             "ok": True,
             "data": {
                 "version": __version__,
-                "phase": "P3A",
+                "phase": "P4A",
                 "loopback_only": True,
                 "authentication_implemented": False,
                 "protocol_live_verified": app_state.protocol_contract.live_verified,
                 "limitations": [
                     "目标推荐收礼人消息仍未形成经审查的现场 fixture",
                     "P2A 提供单进程多房间自动检查、自动录制与故障隔离",
-                    "P3A 提供单进程持久化后处理任务与 recipient 区间导出",
+                    "P3A 提供持久化后处理任务与 recipient 区间导出",
+                    "P4A 提供可验证 Windows 便携包与恢复资产",
                     "真实 IM 自动接入与公网管理尚未启用",
                 ],
                 **data,
