@@ -50,6 +50,47 @@ class RecorderConfigurationError(ValueError):
     """Raised when an FFmpeg recording plan is unsafe or invalid."""
 
 
+def _reject_symlink_components(path: Path, *, stop_at: Path | None = None) -> None:
+    current = path
+    while True:
+        if current.is_symlink():
+            raise RecorderConfigurationError(f"录制输出路径包含符号链接: {current}")
+        if current == current.parent or (stop_at is not None and current == stop_at):
+            return
+        current = current.parent
+
+
+def _prepare_recording_output(plan: RecordingPlan) -> None:
+    output_root = plan.output_root.expanduser().absolute()
+    _reject_symlink_components(output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+    root_resolved = output_root.resolve(strict=True)
+
+    session_dir = output_root / plan.room_key / plan.session_id
+    media_dir = session_dir / "media"
+    _reject_symlink_components(session_dir, stop_at=output_root)
+    _reject_symlink_components(media_dir, stop_at=output_root)
+    media_dir.mkdir(parents=True, exist_ok=True)
+    if session_dir.is_symlink() or media_dir.is_symlink():
+        raise RecorderConfigurationError("录制 session 或媒体目录不得是符号链接")
+    try:
+        session_dir.resolve(strict=True).relative_to(root_resolved)
+        media_dir.resolve(strict=True).relative_to(root_resolved)
+    except ValueError as exc:
+        raise RecorderConfigurationError("录制输出目录越界") from exc
+
+    existing = [
+        *media_dir.glob("*.mkv"),
+        *media_dir.glob("*.ts"),
+        *media_dir.glob("*.writing"),
+    ]
+    if (media_dir / "segments.csv").exists():
+        existing.append(media_dir / "segments.csv")
+    if existing:
+        names = ", ".join(sorted(path.name for path in existing)[:8])
+        raise RecorderConfigurationError(f"录制输出已存在，拒绝覆盖: {names}")
+
+
 @dataclass(frozen=True, slots=True)
 class StreamInput:
     url: str
@@ -163,7 +204,7 @@ class RecordingPlan:
         return self.media_dir / f"%05d.{self.container}"
 
     def process_spec(self) -> RecorderProcessSpec:
-        self.media_dir.mkdir(parents=True, exist_ok=True)
+        _prepare_recording_output(self)
         args: list[str] = [
             self.ffmpeg_path,
             "-hide_banner",

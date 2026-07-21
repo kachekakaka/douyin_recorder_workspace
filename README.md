@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> `main` 已合并 P1A 与 P1B 事务投影基础。当前分支完成 **P1C：普通交互 Chrome 的私人 IM 证据采集与人工去标识门禁**；真实目标消息、长期自动录制和完整交付仍未验证。
+> `main` 已合并 P1A、P1B 与 P1C。当前分支实施 **P1D：显式单房间录制 Session、媒体分片持久化与 recipient 生命周期闭环**；真实目标消息、多房间长期运行和后处理导出仍未验证。
 
 ## 不可改变的业务口径
 
@@ -80,6 +80,16 @@ live_verified=false
 docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md
 ```
 
+### P1D：单房间录制 Session 闭环
+
+- SQLite schema v5 记录脱敏输入指纹、FFmpeg 结果、progress 与媒体分片；
+- 显式 start/stop，同一房间最多一个 active recording；
+- 完整签名 URL 只在 resolver、`StreamInput`、`RecordingPlan` 和 FFmpeg argv 内存链路中存在；
+- recording 与 recipient Waiting/Active/Unknown 使用同一个 session_id；
+- explicit stop、natural exit、nonzero exit、startup failure、app shutdown 和 restart recovery 均有明确结束状态；
+- `segments.csv` 只同步已闭合且位于受控目录的 MKV/TS 文件；
+- 网页提供同源“开始录制/停止录制”控制，不增加公网管理。
+
 ## 快速开始
 
 Windows：
@@ -108,7 +118,7 @@ http://127.0.0.1:3399/
 
 尚未实现管理员认证，因此配置会拒绝 `0.0.0.0`、局域网和公网绑定。HTTP 层同时拒绝非回环 `Host` 和浏览器跨源写操作，降低 DNS rebinding/CSRF 风险。
 
-## 房间与 recipient API
+## 房间、recipient 与 recording API
 
 ```text
 GET   /api/rooms
@@ -122,9 +132,15 @@ POST  /api/rooms/{room_key}/actions/disable
 GET   /api/rooms/{room_key}/recipient-state
 GET   /api/rooms/{room_key}/recipient-events
 GET   /api/rooms/{room_key}/recipient-intervals
+
+POST  /api/rooms/{room_key}/actions/start-recording
+POST  /api/rooms/{room_key}/actions/stop-recording
+GET   /api/rooms/{room_key}/recording
+GET   /api/rooms/{room_key}/recording/sessions
+GET   /api/rooms/{room_key}/recording/segments
 ```
 
-recipient API 是只读审计接口。它不会返回 `raw_payload_json`、`extra_json`、`unknown_fields_json`、完整 WSS、Cookie 或真实原始 payload。没有 session 时返回稳定空状态，不猜测当前对象。
+recipient API 是只读审计接口。recording API 只返回脱敏输入 host/hash、progress、Session 和分片元数据；两者都不会返回 `raw_payload_json`、完整 WSS、Cookie、完整签名流 URL 或真实原始 payload。
 
 ## FFmpeg Supervisor 本地 smoke
 
@@ -135,6 +151,14 @@ python tools/ffmpeg_supervisor_smoke.py --duration 3
 ```
 
 它使用 FFmpeg `lavfi` 生成短测试音视频，验证进程监督、progress、segment CSV 和 MKV 文件写入，不访问抖音。
+
+P1D Session 闭环 smoke：
+
+```bash
+python tools/recording_session_smoke.py --duration 2
+```
+
+该 smoke 进一步验证 schema v5、recording/recipient 共用 session_id、自然退出、分片入库和开放 interval 关闭。
 
 ## 验证
 
@@ -158,6 +182,7 @@ python tools/replay_recipient_fixture.py --quiet
 python tools/replay_recipient_fixture_to_db.py --output userdata/recipient-db-replay.json
 python tools/douyin_interactive_evidence.py --help
 python tools/export_recipient_evidence_fixture.py --help
+python tools/recording_session_smoke.py --duration 2
 ```
 
 数据库 replay 只接受显式 synthetic fixture；公开报告不包含 raw payload。它验证 schema v4 投影与既有 reducer 的 Waiting/Active/Unknown 结果一致，但不能替代真实现场协议证据。
@@ -195,6 +220,8 @@ records/    原始媒体、导出和代理；不进 Git
 11. `docs/P1C_IMPLEMENTATION_PLAN.md`
 12. `docs/P1C_IMPLEMENTATION_REPORT.md`
 13. `docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md`
-14. `docs/GITHUB_WORKFLOW.md`
+14. `docs/P1D_IMPLEMENTATION_PLAN.md`
+15. `docs/P1D_IMPLEMENTATION_REPORT.md`
+16. `docs/GITHUB_WORKFLOW.md`
 
-架构基线：`v2.0`。P1C 工具链关联 Issue #9；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。
+架构基线：`v2.0`。P1D 关联 Issue #11；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。

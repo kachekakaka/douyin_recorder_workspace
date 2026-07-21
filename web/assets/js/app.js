@@ -1,4 +1,13 @@
-import { checkRoom, createRoom, getRooms, getStatus, setRoomEnabled } from './api.js';
+import {
+  checkRoom,
+  createRoom,
+  getRecording,
+  getRooms,
+  getStatus,
+  setRoomEnabled,
+  startRecording,
+  stopRecording,
+} from './api.js';
 
 const byId = id => document.getElementById(id);
 
@@ -28,11 +37,23 @@ function formatCheck(check) {
   return `${state} · ${count} 个流候选${title}`;
 }
 
-function actionButton(label, action) {
+function formatRecording(recording) {
+  const session = recording?.session;
+  if (!session) return '尚无录制 Session';
+  const progress = session.last_progress || {};
+  const seconds = Number.isFinite(progress.out_time_us)
+    ? Math.max(0, Math.floor(progress.out_time_us / 1_000_000))
+    : null;
+  const suffix = seconds === null ? '' : ` · ${seconds}s`;
+  return `${recording.active ? '录制中' : session.status} · ${session.recording_protocol || '-'} · ${session.recording_quality || '-'}${suffix}`;
+}
+
+function actionButton(label, action, { disabled = false, className = 'secondary' } = {}) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'secondary';
+  button.className = className;
   button.textContent = label;
+  button.disabled = disabled;
   button.addEventListener('click', async () => {
     button.disabled = true;
     clearError();
@@ -76,21 +97,41 @@ function renderRooms(items) {
     check.className = 'muted';
     check.textContent = formatCheck(room.latest_check);
 
+    const recording = document.createElement('p');
+    recording.className = room.recording?.active ? 'recording-active' : 'muted';
+    recording.textContent = formatRecording(room.recording);
+
     const actions = document.createElement('div');
     actions.className = 'actions';
     actions.append(
       actionButton('立即检查', () => checkRoom(room.room_key)),
+      room.recording?.active
+        ? actionButton('停止录制', () => stopRecording(room.room_key), { className: 'danger' })
+        : actionButton('开始录制', () => startRecording(room.room_key), {
+            disabled: !room.enabled,
+            className: 'record',
+          }),
       actionButton(room.enabled ? '停用' : '启用', () => setRoomEnabled(room.room_key, !room.enabled)),
     );
 
-    card.append(heading, meta, check, actions);
+    card.append(heading, meta, check, recording, actions);
     list.append(card);
   }
 }
 
 async function refreshRooms() {
   const data = await getRooms();
-  renderRooms(data.items || []);
+  const rooms = data.items || [];
+  const items = await Promise.all(
+    rooms.map(async room => {
+      try {
+        return { ...room, recording: await getRecording(room.room_key) };
+      } catch {
+        return { ...room, recording: null };
+      }
+    }),
+  );
+  renderRooms(items);
   byId('roomCount').textContent = String(data.total || 0);
 }
 

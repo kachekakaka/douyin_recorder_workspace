@@ -70,7 +70,31 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
     async def scenario() -> None:
         database = Database(tmp_path / "userdata" / "douyin_recorder.db")
         await database.initialize()
-        assert await database.schema_version() == 4
+        assert await database.schema_version() == 5
+        columns = await database.fetch_all("PRAGMA table_info(sessions)")
+        session_columns = {str(row["name"]) for row in columns}
+        assert {
+            "recording_protocol",
+            "recording_quality",
+            "input_host",
+            "input_path_sha256",
+            "input_url_sha256",
+            "input_query_keys_json",
+            "ffmpeg_returncode",
+            "stop_stage",
+            "last_progress_json",
+            "recording_error_code",
+        }.issubset(session_columns)
+        media_columns = {
+            str(row["name"])
+            for row in await database.fetch_all("PRAGMA table_info(media_files)")
+        }
+        assert {
+            "segment_start_seconds",
+            "segment_end_seconds",
+            "container",
+            "media_suffix",
+        }.issubset(media_columns)
         assert str(await database.pragma("journal_mode")).casefold() == "wal"
         assert int(await database.pragma("foreign_keys")) == 1
 

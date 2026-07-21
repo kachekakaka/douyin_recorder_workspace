@@ -21,7 +21,7 @@ def test_recipient_database_replay_is_deterministic_and_redacted(tmp_path: Path)
             database_path=tmp_path / "second.db",
         )
         assert first == second
-        assert first["schema_version"] == 4
+        assert first["schema_version"] == 5
         assert first["contract_live_verified"] is False
         assert first["state"]["session_status"] == "ended"
         assert first["state"]["current"] is None

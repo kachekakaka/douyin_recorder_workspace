@@ -60,6 +60,11 @@ async def update_room(
     request: Request,
 ) -> dict[str, object]:
     try:
+        if "room_url" in payload.model_fields_set or payload.enabled is False:
+            await request.app.state.app_state.recording_service.stop_recording(
+                room_key,
+                reason="room_configuration_changed",
+            )
         room = await _service(request).update_room(room_key, payload)
     except RoomNotFoundError as exc:
         raise HTTPException(status_code=404, detail="直播间不存在") from exc
@@ -89,6 +94,10 @@ async def enable_room(room_key: RoomKeyPath, request: Request) -> dict[str, obje
 @router.post("/{room_key}/actions/disable")
 async def disable_room(room_key: RoomKeyPath, request: Request) -> dict[str, object]:
     try:
+        await request.app.state.app_state.recording_service.stop_recording(
+            room_key,
+            reason="room_disabled",
+        )
         room = await _service(request).set_enabled(room_key, False)
     except RoomNotFoundError as exc:
         raise HTTPException(status_code=404, detail="直播间不存在") from exc

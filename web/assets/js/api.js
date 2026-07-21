@@ -37,3 +37,19 @@ export function setRoomEnabled(roomKey, enabled) {
   const action = enabled ? 'enable' : 'disable';
   return request(`/api/rooms/${encodeURIComponent(roomKey)}/actions/${action}`, { method: 'POST' });
 }
+
+export function getRecording(roomKey) {
+  return request(`/api/rooms/${encodeURIComponent(roomKey)}/recording`);
+}
+
+export function startRecording(roomKey) {
+  return request(`/api/rooms/${encodeURIComponent(roomKey)}/actions/start-recording`, {
+    method: 'POST',
+  });
+}
+
+export function stopRecording(roomKey) {
+  return request(`/api/rooms/${encodeURIComponent(roomKey)}/actions/stop-recording`, {
+    method: 'POST',
+  });
+}

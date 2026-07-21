@@ -265,3 +265,39 @@ def test_recording_plan_refuses_overwrite_and_dangerous_headers(tmp_path: Path) 
     )
     with pytest.raises(RecorderConfigurationError, match="不允许"):
         unsafe.header_blob()
+
+
+def test_recording_plan_rejects_existing_outputs_and_symlink_paths(tmp_path: Path) -> None:
+    stream = StreamInput(
+        url="https://pull.example.douyincdn.com/live/a.flv",
+        protocol="flv",
+        quality="origin",
+    )
+    plan = RecordingPlan(
+        ffmpeg_path="ffmpeg",
+        room_key="group-a",
+        session_id="session-a",
+        stream=stream,
+        output_root=tmp_path,
+    )
+    plan.media_dir.mkdir(parents=True)
+    (plan.media_dir / "00000.mkv").write_bytes(b"existing")
+    with pytest.raises(RecorderConfigurationError, match="拒绝覆盖"):
+        plan.process_spec()
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked_root = tmp_path / "linked-root"
+    try:
+        linked_root.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        return
+    linked_plan = RecordingPlan(
+        ffmpeg_path="ffmpeg",
+        room_key="group-b",
+        session_id="session-b",
+        stream=stream,
+        output_root=linked_root,
+    )
+    with pytest.raises(RecorderConfigurationError, match="符号链接"):
+        linked_plan.process_spec()
