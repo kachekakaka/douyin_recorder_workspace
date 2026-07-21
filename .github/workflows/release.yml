@@ -1,0 +1,185 @@
+name: Windows package and Release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/release.yml"
+      - "app/**"
+      - "config/**"
+      - "packaging/**"
+      - "requirements/runtime.lock"
+      - "scripts/release/**"
+      - "tools/release_package.py"
+      - "tools/*smoke.py"
+      - "docs/releases/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-package:
+    name: Build and verify Windows x64 package
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up build Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/runtime.lock
+
+      - name: Validate release lock and version
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF_NAME } else { '' }
+          if ($tag) {
+            python tools/release_package.py validate-lock --root . --lock packaging/release-lock.json --tag $tag
+          } else {
+            python tools/release_package.py validate-lock --root . --lock packaging/release-lock.json
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build deterministic Windows package
+        shell: pwsh
+        run: |
+          ./scripts/release/build-windows-package.ps1 `
+            -SourceRoot $PWD `
+            -OutputDir "$env:RUNNER_TEMP\windows-assets" `
+            -SourceCommit "$(git rev-parse HEAD)"
+
+      - name: Verify clean extraction and portable runtime
+        shell: pwsh
+        run: |
+          ./scripts/release/verify-windows-package.ps1 `
+            -SourceRoot $PWD `
+            -AssetDir "$env:RUNNER_TEMP\windows-assets"
+
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  source-assets:
+    name: Build and restore source assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build canonical source ZIP, bundle and manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python -c 'from app import __version__; print(__version__)')"
+          tag="${GITHUB_REF_NAME:-}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python tools/release_package.py validate-lock --tag "$tag"
+          else
+            python tools/release_package.py validate-lock
+          fi
+          out="$RUNNER_TEMP/source-assets"
+          mkdir -p "$out"
+          git archive --format=zip -o "$out/douyin-recorder-v${version}-source.zip" HEAD
+          git bundle create "$out/douyin-recorder-v${version}-source.bundle" HEAD --all
+          python tools/release_package.py source-manifest \
+            --root . --commit "$(git rev-parse HEAD)" \
+            --output "$out/source-tree-manifest.json"
+          (
+            cd "$out"
+            sha256sum \
+              "douyin-recorder-v${version}-source.zip" \
+              "douyin-recorder-v${version}-source.bundle" \
+              source-tree-manifest.json > source-SHA256SUMS.txt
+          )
+          git bundle verify "$out/douyin-recorder-v${version}-source.bundle"
+          restore="$RUNNER_TEMP/source-restore"
+          git clone --quiet "$out/douyin-recorder-v${version}-source.bundle" "$restore"
+          git -C "$restore" checkout --quiet --detach "$(git rev-parse HEAD)"
+          test "$(git -C "$restore" rev-parse HEAD^{tree})" = "$(git rev-parse HEAD^{tree})"
+          python "$restore/tools/verify_repository_baseline.py"
+
+      - name: Upload source release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-source-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows-package, source-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify final asset set
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          for name in \
+            "douyin-recorder-v${version}-windows-x64.zip" \
+            "douyin-recorder-v${version}-source.zip" \
+            "douyin-recorder-v${version}-source.bundle" \
+            windows-manifest.json \
+            windows-SHA256SUMS.txt \
+            windows-asset-SHA256SUMS.txt \
+            source-tree-manifest.json \
+            source-SHA256SUMS.txt \
+            python-dependencies.json; do
+            test -s "release-assets/$name"
+          done
+          (cd release-assets && sha256sum -c windows-asset-SHA256SUMS.txt)
+          (cd release-assets && sha256sum -c source-SHA256SUMS.txt)
+      - name: Create immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release already exists: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            release-assets/* \
+            --verify-tag \
+            --title "Douyin Recorder $GITHUB_REF_NAME" \
+            --notes-file docs/releases/v0.1.0.md
