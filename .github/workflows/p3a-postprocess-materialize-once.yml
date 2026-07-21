@@ -89,13 +89,20 @@ jobs:
           EOF
           )"
           rm -rf .github/p3a-payload
-          git diff --check
           python - <<'PY'
           import json
           from pathlib import Path
+
+          report = Path("docs/P3A_IMPLEMENTATION_REPORT.md")
+          text = report.read_text(encoding="utf-8")
+          report.write_text(
+              "\n".join(line.rstrip() for line in text.splitlines()) + "\n",
+              encoding="utf-8",
+          )
           if json.loads(Path("app/douyin/contracts/provisional_v1.json").read_text(encoding="utf-8")).get("live_verified") is not False:
               raise SystemExit("live_verified must remain false")
           PY
+          git diff --check
 
       - name: Install dependencies and run complete validation
         shell: bash
