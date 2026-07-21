@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "7a822e2c47490898e86e9f5176a0c16cbd3fac87"
+          test "$(git rev-parse HEAD^)" = "24fd61230ccbe5df36b8d4a9f56ab304ba55c951"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-package-materialize-once.yml"
           test "$(git rev-parse c62768351f32fa044cfb27b83775bdc5438a3054^{tree})" = \
             "567186589d3de74457a5411edc573d286ce1ccb8"
@@ -79,7 +79,7 @@ jobs:
           test "$(stat -c %s "$patch")" = "60025"
           ! grep -q '^diff --git a/.github/' "$patch"
 
-      - name: Apply reviewed P4A business commit
+      - name: Apply and normalize reviewed P4A business commit
         shell: bash
         run: |
           set -euo pipefail
@@ -88,6 +88,14 @@ jobs:
           git am "$RUNNER_TEMP/p4a.patch"
           test "$(git log -1 --pretty=%s)" = "feat: build deterministic Windows portable release"
           test -z "$(git diff HEAD^ HEAD --name-only | grep '^.github/' || true)"
+          python - <<'PY'
+          from pathlib import Path
+          report = Path('docs/P4A_RELEASE_REPORT.md')
+          text = report.read_text(encoding='utf-8')
+          report.write_text('\n'.join(line.rstrip() for line in text.splitlines()) + '\n', encoding='utf-8')
+          PY
+          git add docs/P4A_RELEASE_REPORT.md
+          git commit --amend --no-edit
 
       - name: Verify P4A contract and release lock
         shell: bash
@@ -97,12 +105,13 @@ jobs:
           import json
           from pathlib import Path
           lock = json.loads(Path('packaging/release-lock.json').read_text(encoding='utf-8'))
-          if lock.get('version') != '0.1.0':
+          if lock.get('release_version') != '0.1.0':
               raise SystemExit('P4A release lock version mismatch')
           contract = json.loads(Path('app/douyin/contracts/provisional_v1.json').read_text(encoding='utf-8'))
           if contract.get('live_verified') is not False:
               raise SystemExit('live_verified must remain false')
           PY
+          git show --check --oneline --no-renames HEAD
           git diff --check
 
       - name: Run complete source validation
