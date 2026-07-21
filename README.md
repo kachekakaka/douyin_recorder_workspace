@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> `main` 已合并 P1A、P1B 与 P1C。当前分支实施 **P1D：显式单房间录制 Session、媒体分片持久化与 recipient 生命周期闭环**；真实目标消息、多房间长期运行和后处理导出仍未验证。
+> `main` 已合并 P1A–P1D。当前分支实施 **P2A：单进程多房间 RoomManager、自动开播录制与故障隔离**；真实目标消息和后处理导出仍未验证。
 
 ## 不可改变的业务口径
 
@@ -90,6 +90,18 @@ docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md
 - `segments.csv` 只同步已闭合且位于受控目录的 MKV/TS 文件；
 - 网页提供同源“开始录制/停止录制”控制，不增加公网管理。
 
+
+### P2A：多房间自动录制编排
+
+- 单进程唯一 `RoomManager`，每个 enabled room 一个严格串行 worker；
+- 全局 semaphore 限制并发直播检查，单房间故障不会阻塞其他房间；
+- `live` 自动确保录制，同一房间不会重复启动 Session；
+- 连续 `offline` 达配置阈值后停止录制；
+- `unknown`、`blocked` 和 `error` 保持已有媒体连接并指数退避；
+- create/enable/update/disable 后动态 reconcile，disable 会停止 worker 与当前 recording；
+- production 模板默认启用 manager；缺少 `poll.enabled` 的最小测试/自定义配置保持禁用，避免意外网络访问；
+- 网页显示 manager/worker 状态并提供同源手动 reconcile。
+
 ## 快速开始
 
 Windows：
@@ -118,7 +130,7 @@ http://127.0.0.1:3399/
 
 尚未实现管理员认证，因此配置会拒绝 `0.0.0.0`、局域网和公网绑定。HTTP 层同时拒绝非回环 `Host` 和浏览器跨源写操作，降低 DNS rebinding/CSRF 风险。
 
-## 房间、recipient 与 recording API
+## 房间、recipient、recording 与 manager API
 
 ```text
 GET   /api/rooms
@@ -138,9 +150,13 @@ POST  /api/rooms/{room_key}/actions/stop-recording
 GET   /api/rooms/{room_key}/recording
 GET   /api/rooms/{room_key}/recording/sessions
 GET   /api/rooms/{room_key}/recording/segments
+
+GET   /api/manager/status
+POST  /api/manager/actions/reconcile
+GET   /api/rooms/{room_key}/worker
 ```
 
-recipient API 是只读审计接口。recording API 只返回脱敏输入 host/hash、progress、Session 和分片元数据；两者都不会返回 `raw_payload_json`、完整 WSS、Cookie、完整签名流 URL 或真实原始 payload。
+recipient API 是只读审计接口。recording 与 manager API 只返回脱敏输入 host/hash、progress、Session、分片和 worker 审计状态；不会返回 `raw_payload_json`、异常正文、完整 WSS、Cookie、完整签名流 URL 或真实原始 payload。
 
 ## FFmpeg Supervisor 本地 smoke
 
@@ -222,6 +238,8 @@ records/    原始媒体、导出和代理；不进 Git
 13. `docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md`
 14. `docs/P1D_IMPLEMENTATION_PLAN.md`
 15. `docs/P1D_IMPLEMENTATION_REPORT.md`
-16. `docs/GITHUB_WORKFLOW.md`
+16. `docs/P2A_IMPLEMENTATION_PLAN.md`
+17. `docs/P2A_IMPLEMENTATION_REPORT.md`
+18. `docs/GITHUB_WORKFLOW.md`
 
-架构基线：`v2.0`。P1D 关联 Issue #11；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。
+架构基线：`v2.0`。P2A 关联 Issue #13；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。
