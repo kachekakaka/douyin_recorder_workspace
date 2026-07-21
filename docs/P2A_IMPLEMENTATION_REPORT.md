@@ -1,8 +1,25 @@
 # P2A 实施报告：多房间 RoomManager 与自动录制编排
 
-状态：**工程实现完成，等待远端 PR exact-head CI 与 Review；真实目标消息仍未现场验证，`live_verified=false`。**  
+状态：**工程实现完成，等待最终用户提交 head 的 exact-head CI 与 Review；真实目标消息仍未现场验证，`live_verified=false`。**  
 关联：Issue #13、协议事实 Issue #1  
 分支：`feature/p2a-multi-room-manager`
+
+## 远端实现里程碑
+
+```text
+a9164aae7f4e1250fc05104ce6ea8d92cafff8d1
+chore: remove temporary P2A materializer
+```
+
+经校验的一次性发布 run：
+
+```text
+29836843911  P2A materialize RoomManager once  success
+```
+
+该 run 校验补丁 base64、gzip 和未压缩 patch SHA-256，保留四个业务里程碑提交，删除一次性 workflow 与所有 `.github/p2a-payload*` 临时文件，并通过锁定依赖、repository baseline、source boundary、compileall、Ruff、pytest、recipient replay、JavaScript syntax、FFmpeg Supervisor smoke 和 Recording Session smoke。
+
+由 `github-actions[bot]` 推送且包含 CI workflow 修改的 head 自动 run `29836920456` 被 GitHub 标记为 `action_required`，没有启动 job；本提交使用用户身份触发可实际执行的最终标准 CI，不把该状态误报为测试失败或成功。
 
 ## 已实现
 
@@ -52,4 +69,4 @@ P2A 不改变 recipient 来源，不因 recipient 切换触碰 FFmpeg，不把 u
 - 管理员认证与公网管理；
 - Windows 正式 release package。
 
-因此 provisional contract 继续保持 `live_verified=false`，Issue #1 保持 Open。
+因此 provisional contract 继续保持 `live_verified=false`，Issue #1 保持 Open。最终 PR 结论以本提交对应的标准 GitHub Actions 为准。
