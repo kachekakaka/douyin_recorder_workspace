@@ -1,0 +1,127 @@
+name: P4A materialize package implementation once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/p4a-package-materialize-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p4a-package-materialize-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    name: Materialize verified P4A package implementation
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feature/p4a-release-packaging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/p4a-release-packaging
+
+      - name: Set up Python and Node.js
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/dev.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify exact staging state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD^)" = "ee3b2e467c7eed65a9fb1418e0cdf61cfe65c93e"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-package-materialize-once.yml"
+          test "$(git rev-parse c62768351f32fa044cfb27b83775bdc5438a3054^{tree})" = \
+            "$(git rev-parse 73fb1a078a3e2ce60b04859cc1d08a9cd62660ff^{tree})"
+
+      - name: Reconstruct and apply reviewed P4A business patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_b64="$RUNNER_TEMP/p4a.patch.gz.b64"
+          patch_gz="$RUNNER_TEMP/p4a.patch.gz"
+          patch="$RUNNER_TEMP/p4a.patch"
+          : > "$patch_b64"
+          for sha in \
+            cbc2b9dcf55931db6c560237a4df599e9e662382 \
+            c8729a415144336b3284d6f363a7b7e27fc7500e \
+            99fe1f633aace3bdc31f9c8a7f5526623dec320a \
+            6e5423ff86f52c6544b5885ee9280bf95db3be53 \
+            8991a4052831b86bf36afd82fe89714e442dea26 \
+            dac468401f3fc5d7d966687cd54f76e87cadd7be
+          do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content \
+              | tr -d '\n' | base64 --decode >> "$patch_b64"
+          done
+          echo "72e9347c04f907bba75bfb1bb3eccc5e367ad00fd3cf663be5ac8f138776b2b0  $patch_b64" | sha256sum -c -
+          test "$(stat -c %s "$patch_b64")" = "23268"
+          base64 --decode "$patch_b64" > "$patch_gz"
+          echo "f528a797445d4790197d66d293fdfb8a976d65eb7d22155f266eb949e146736d  $patch_gz" | sha256sum -c -
+          test "$(stat -c %s "$patch_gz")" = "17450"
+          gzip -dc "$patch_gz" > "$patch"
+          echo "0e8e0a13ef2c4c13b6937db64baa5613180ce5d89beb291ae71aeb1383ffe161  $patch" | sha256sum -c -
+          test "$(stat -c %s "$patch")" = "60025"
+          ! grep -q '^diff --git a/.github/' "$patch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git am "$patch"
+          test "$(git log -1 --pretty=%s)" = "feat: build deterministic Windows portable release"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          lock = json.loads(Path('packaging/release-lock.json').read_text(encoding='utf-8'))
+          if lock.get('version') != '0.1.0':
+              raise SystemExit('P4A release lock version mismatch')
+          contract = json.loads(Path('app/douyin/contracts/provisional_v1.json').read_text(encoding='utf-8'))
+          if contract.get('live_verified') is not False:
+              raise SystemExit('live_verified must remain false')
+          PY
+          git diff --check
+
+      - name: Run complete source validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.lock
+          python -m pip check
+          python tools/verify_repository_baseline.py
+          python tools/verify_source.py
+          python -m compileall -q app tests tools
+          python -m ruff check --no-cache app tests tools
+          python -m pytest -q -p no:cacheprovider --tb=short
+          python tools/replay_recipient_fixture.py --quiet
+          python tools/replay_recipient_fixture_to_db.py --output "$RUNNER_TEMP/recipient-db.json"
+          while IFS= read -r -d '' file; do node --check "$file"; done < <(find web -type f -name '*.js' -print0)
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          python tools/ffmpeg_supervisor_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p4a-supervisor-smoke"
+          python tools/recording_session_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p4a-session-smoke"
+          python tools/postprocess_smoke.py --duration 2 --output-dir "$RUNNER_TEMP/p4a-postprocess-smoke"
+
+      - name: Push verified P4A business commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --short)"
+          test -z "$(git diff HEAD^ HEAD --name-only | grep '^.github/' || true)"
+          git push origin "HEAD:feature/p4a-release-packaging"
+          git rev-parse HEAD
