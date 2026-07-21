@@ -41,6 +41,7 @@ async def create_room(payload: RoomCreate, request: Request) -> dict[str, object
         room = await _service(request).create_room(payload)
     except RoomAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail="room_key 或 room_url 已存在") from exc
+    await request.app.state.app_state.room_manager.reconcile()
     return {"ok": True, "data": room.model_dump(mode="json")}
 
 
@@ -60,7 +61,10 @@ async def update_room(
     request: Request,
 ) -> dict[str, object]:
     try:
-        if "room_url" in payload.model_fields_set or payload.enabled is False:
+        if (
+            {"room_url", "quality", "protocol"} & payload.model_fields_set
+            or payload.enabled is False
+        ):
             await request.app.state.app_state.recording_service.stop_recording(
                 room_key,
                 reason="room_configuration_changed",
@@ -70,6 +74,7 @@ async def update_room(
         raise HTTPException(status_code=404, detail="直播间不存在") from exc
     except RoomAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail="room_url 已由其他 room_key 使用") from exc
+    await request.app.state.app_state.room_manager.reconcile()
     return {"ok": True, "data": room.model_dump(mode="json")}
 
 
@@ -88,6 +93,7 @@ async def enable_room(room_key: RoomKeyPath, request: Request) -> dict[str, obje
         room = await _service(request).set_enabled(room_key, True)
     except RoomNotFoundError as exc:
         raise HTTPException(status_code=404, detail="直播间不存在") from exc
+    await request.app.state.app_state.room_manager.reconcile()
     return {"ok": True, "data": room.model_dump(mode="json")}
 
 
@@ -101,4 +107,5 @@ async def disable_room(room_key: RoomKeyPath, request: Request) -> dict[str, obj
         room = await _service(request).set_enabled(room_key, False)
     except RoomNotFoundError as exc:
         raise HTTPException(status_code=404, detail="直播间不存在") from exc
+    await request.app.state.app_state.room_manager.reconcile()
     return {"ok": True, "data": room.model_dump(mode="json")}
