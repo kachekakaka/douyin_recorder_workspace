@@ -285,5 +285,79 @@ CREATE INDEX IF NOT EXISTS ix_media_files_session_sequence
     ON media_files(session_id, sequence);
 """,
     ),
+    Migration(
+        6,
+        "p3a_postprocess_jobs",
+        r"""
+CREATE TABLE IF NOT EXISTS postprocess_jobs (
+    id TEXT PRIMARY KEY,
+    job_type TEXT NOT NULL CHECK (job_type IN ('recipient_export')),
+    session_id TEXT NOT NULL REFERENCES sessions(id),
+    status TEXT NOT NULL CHECK (
+        status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')
+    ),
+    priority INTEGER NOT NULL DEFAULT 100,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts BETWEEN 1 AND 10),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    plan_json TEXT NOT NULL,
+    cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1)),
+    runtime_instance_id TEXT NULL REFERENCES runtime_instances(id),
+    error_code TEXT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    started_at_ms INTEGER NULL,
+    ended_at_ms INTEGER NULL
+);
+
+CREATE TABLE IF NOT EXISTS postprocess_attempts (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES postprocess_jobs(id) ON DELETE CASCADE,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number >= 1),
+    status TEXT NOT NULL CHECK (
+        status IN ('running', 'succeeded', 'failed', 'canceled', 'interrupted')
+    ),
+    runtime_instance_id TEXT NOT NULL REFERENCES runtime_instances(id),
+    started_at_ms INTEGER NOT NULL,
+    ended_at_ms INTEGER NULL,
+    returncode INTEGER NULL,
+    stop_stage TEXT NULL,
+    error_code TEXT NULL,
+    UNIQUE(job_id, attempt_number)
+);
+
+CREATE TABLE IF NOT EXISTS postprocess_outputs (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES postprocess_jobs(id) ON DELETE CASCADE,
+    interval_id INTEGER NOT NULL REFERENCES recipient_intervals(id),
+    interval_status TEXT NOT NULL CHECK (interval_status IN ('waiting', 'active', 'unknown')),
+    interval_reason TEXT NULL,
+    recipient_key_sha256 TEXT NOT NULL DEFAULT '',
+    source_media_ids_json TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    trim_start_seconds REAL NOT NULL CHECK (trim_start_seconds >= 0),
+    duration_seconds REAL NOT NULL CHECK (duration_seconds > 0),
+    status TEXT NOT NULL CHECK (
+        status IN ('queued', 'writing', 'succeeded', 'failed', 'canceled')
+    ),
+    size_bytes INTEGER NULL,
+    sha256 TEXT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    UNIQUE(job_id, interval_id),
+    UNIQUE(relative_path)
+);
+
+CREATE INDEX IF NOT EXISTS ix_postprocess_jobs_status_priority
+    ON postprocess_jobs(status, priority, created_at_ms, id);
+CREATE INDEX IF NOT EXISTS ix_postprocess_jobs_session_created
+    ON postprocess_jobs(session_id, created_at_ms DESC);
+CREATE INDEX IF NOT EXISTS ix_postprocess_attempts_job_number
+    ON postprocess_attempts(job_id, attempt_number);
+CREATE INDEX IF NOT EXISTS ix_postprocess_outputs_job_interval
+    ON postprocess_outputs(job_id, interval_id);
+""",
+    ),
+
 
 )

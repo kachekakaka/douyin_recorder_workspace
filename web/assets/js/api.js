@@ -65,3 +65,22 @@ export function reconcileManager() {
 export function getWorker(roomKey) {
   return request(`/api/rooms/${encodeURIComponent(roomKey)}/worker`);
 }
+
+export function createExport(sessionId) {
+  return request(`/api/recording/sessions/${encodeURIComponent(sessionId)}/actions/create-export`, {
+    method: 'POST',
+  });
+}
+
+export function getJobs(status = '') {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request(`/api/jobs${query}`);
+}
+
+export function retryJob(jobId) {
+  return request(`/api/jobs/${encodeURIComponent(jobId)}/actions/retry`, { method: 'POST' });
+}
+
+export function cancelJob(jobId) {
+  return request(`/api/jobs/${encodeURIComponent(jobId)}/actions/cancel`, { method: 'POST' });
+}

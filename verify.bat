@@ -53,6 +53,8 @@ if errorlevel 1 (
   if errorlevel 1 goto :failed
   "%PY%" tools\recording_session_smoke.py --duration 2 --output-dir "%VERIFY_DIR%\recording-session-smoke"
   if errorlevel 1 goto :failed
+  "%PY%" tools\postprocess_smoke.py --duration 2 --output-dir "%VERIFY_DIR%\postprocess-smoke"
+  if errorlevel 1 goto :failed
 )
 where ffprobe >nul 2>nul
 if errorlevel 1 (
@@ -72,12 +74,12 @@ if errorlevel 1 (
 
 if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P2A 完整自检通过 =====
+echo ===== P3A 完整自检通过 =====
 exit /b 0
 
 :failed
 if defined VERIFY_DIR if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== P2A 自检失败，请查看上方信息 =====
+echo ===== P3A 自检失败，请查看上方信息 =====
 pause
 exit /b 1

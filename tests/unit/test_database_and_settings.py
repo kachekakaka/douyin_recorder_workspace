@@ -44,6 +44,8 @@ def test_settings_create_actual_config_and_runtime_directories(tmp_path: Path) -
     assert settings.poll_jitter_seconds == 0
     assert settings.offline_confirmations == 3
     assert settings.max_parallel_checks == 10
+    assert settings.postprocess_enabled is False
+    assert settings.postprocess_max_attempts == 3
 
 
 def test_settings_refuse_public_bind_before_auth_exists(tmp_path: Path) -> None:
@@ -74,7 +76,7 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
     async def scenario() -> None:
         database = Database(tmp_path / "userdata" / "douyin_recorder.db")
         await database.initialize()
-        assert await database.schema_version() == 5
+        assert await database.schema_version() == 6
         columns = await database.fetch_all("PRAGMA table_info(sessions)")
         session_columns = {str(row["name"]) for row in columns}
         assert {
@@ -101,6 +103,16 @@ def test_database_migrations_constraints_and_consistent_backup(tmp_path: Path) -
         }.issubset(media_columns)
         assert str(await database.pragma("journal_mode")).casefold() == "wal"
         assert int(await database.pragma("foreign_keys")) == 1
+        for table in (
+            "postprocess_jobs",
+            "postprocess_attempts",
+            "postprocess_outputs",
+        ):
+            row = await database.fetch_one(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            )
+            assert row == {"name": table}
 
         await database.execute(
             "INSERT INTO runtime_instances(id, app_version, started_at_ms) VALUES (?, ?, ?)",
@@ -245,3 +257,33 @@ def test_poll_manager_settings_validate_safe_ranges(tmp_path: Path) -> None:
             paths=RuntimePaths.defaults(tmp_path),
             environ={},
         )
+
+
+def test_postprocess_settings_validate_single_worker_and_attempts(tmp_path: Path) -> None:
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    template = config / "config.json.default"
+    template.write_text(
+        json.dumps(
+            {
+                "server": {
+                    "host": "127.0.0.1",
+                    "port": 3399,
+                    "auth_required": False,
+                },
+                "jobs": {"enabled": True, "concurrency": 1, "max_attempts": 5},
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = Settings.load(
+        root=tmp_path, paths=RuntimePaths.defaults(tmp_path), environ={}
+    )
+    assert settings.postprocess_enabled is True
+    assert settings.postprocess_max_attempts == 5
+
+    actual = json.loads(settings.config_path.read_text(encoding="utf-8"))
+    actual["jobs"]["concurrency"] = 2
+    settings.config_path.write_text(json.dumps(actual), encoding="utf-8")
+    with pytest.raises(SettingsError, match="concurrency"):
+        Settings.load(root=tmp_path, paths=RuntimePaths.defaults(tmp_path), environ={})

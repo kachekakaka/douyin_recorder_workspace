@@ -1,12 +1,16 @@
 import {
+  cancelJob,
   checkRoom,
+  createExport,
   createRoom,
+  getJobs,
   getManagerStatus,
   getRecording,
   getRooms,
   getStatus,
   getWorker,
   reconcileManager,
+  retryJob,
   setRoomEnabled,
   startRecording,
   stopRecording,
@@ -129,12 +133,67 @@ function renderRooms(items) {
             disabled: !room.enabled,
             className: 'record',
           }),
+      room.recording?.session?.status === 'ended'
+        ? actionButton('创建区间导出', () => createExport(room.recording.session.id), {
+            className: 'export',
+          })
+        : document.createDocumentFragment(),
       actionButton(room.enabled ? '停用' : '启用', () => setRoomEnabled(room.room_key, !room.enabled)),
     );
 
     card.append(heading, meta, check, worker, recording, actions);
     list.append(card);
   }
+}
+
+function formatJob(job) {
+  const outputs = job.outputs || [];
+  const completed = outputs.filter(item => item.status === 'succeeded').length;
+  return `${job.status} · ${completed}/${outputs.length} 输出 · ${job.attempts}/${job.max_attempts} 尝试`;
+}
+
+function renderJobs(items) {
+  const list = byId('jobList');
+  list.replaceChildren();
+  byId('jobCount').textContent = String(items.length);
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = '尚无后处理任务。录制 Session 正常结束后可创建 recipient 区间导出。';
+    list.append(empty);
+    return;
+  }
+  for (const job of items) {
+    const card = document.createElement('article');
+    card.className = 'job-card';
+    const title = document.createElement('strong');
+    title.textContent = job.id;
+    const meta = document.createElement('p');
+    meta.textContent = formatJob(job);
+    const session = document.createElement('small');
+    session.textContent = `Session ${job.session_id}`;
+    const outputs = document.createElement('ul');
+    for (const output of job.outputs || []) {
+      const row = document.createElement('li');
+      row.textContent = `${output.interval_status} · ${output.status} · ${output.relative_path}`;
+      outputs.append(row);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    if (job.status === 'queued' || job.status === 'running') {
+      actions.append(actionButton('取消任务', () => cancelJob(job.id), { className: 'danger' }));
+    }
+    if (job.status === 'failed' || job.status === 'canceled') {
+      actions.append(actionButton('重试任务', () => retryJob(job.id)));
+    }
+    card.append(title, meta, session, outputs, actions);
+    list.append(card);
+  }
+}
+
+async function refreshJobs() {
+  const data = await getJobs();
+  renderJobs(data.items || []);
 }
 
 async function refreshRooms() {
@@ -162,6 +221,7 @@ async function refresh(force = false) {
       getStatus(force),
       getManagerStatus(),
       refreshRooms(),
+      refreshJobs(),
     ]);
     byId('appState').textContent = status.ready ? '已就绪' : '服务已启动';
     byId('appState').className = status.ready ? 'good' : '';
