@@ -103,7 +103,7 @@ jobs:
               "late_event_count": 1,
               "interval_count": 7,
           }
-          if report.get("schema_version") != 4:
+          if report.get("schema_version") != 5:
               raise SystemExit("recipient database replay schema mismatch")
           if report.get("contract_live_verified") is not False:
               raise SystemExit("recipient database replay changed live_verified")
@@ -139,6 +139,16 @@ jobs:
             --output-dir "$RUNNER_TEMP/ffmpeg-smoke" \
             2>&1 | tee -a "$RUNNER_TEMP/ffmpeg-smoke-output.log"
 
+      - name: P1D recording Session local smoke
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/recording_session_smoke.py \
+            --duration 2 \
+            --output-dir "$RUNNER_TEMP/recording-session-smoke" \
+            2>&1 | tee "$RUNNER_TEMP/recording-session-smoke.log"
+
       - name: Create and restore source recovery assets
         if: matrix.python-version == '3.12'
         shell: bash
@@ -163,6 +173,7 @@ jobs:
             ${{ runner.temp }}/pytest.log
             ${{ runner.temp }}/ffmpeg-smoke-output.log
             ${{ runner.temp }}/ffmpeg-smoke/ffmpeg.log
+            ${{ runner.temp }}/recording-session-smoke.log
             ${{ runner.temp }}/recovery.log
           if-no-files-found: ignore
           retention-days: 7
