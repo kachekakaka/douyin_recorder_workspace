@@ -51,6 +51,7 @@ jobs:
           test -f .github/p3a-payload/03.txt
           test "$(git rev-parse d492e0e881f4fe39692e1d0c979554f87e6a4b88^{tree})" = \
             "fa8b1ccbb86c6468a0929f4e10bc12886481d8bf"
+          echo "P3A_STAGING_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Reconstruct verified P3A milestone patch
         env:
@@ -111,9 +112,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf \
-            .github/p3a-payload \
-            .github/workflows/p3a-postprocess-materialize-once.yml
+          rm -rf .github/p3a-payload
           python - <<'PY'
           import json
           from pathlib import Path
@@ -161,19 +160,27 @@ jobs:
             --duration 2 \
             --output-dir "$RUNNER_TEMP/p3a-postprocess-smoke"
 
-      - name: Stage and commit P3A cleanup
+      - name: Squash verified P3A implementation without workflow mutations
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git hash-object .github/workflows/ci.yml)" = \
+            "8eef42b28baa93a43bd298863511a9ce69702ea6"
+          git reset --soft "$P3A_STAGING_HEAD"
+          git restore --source="$P3A_STAGING_HEAD" --staged --worktree \
+            .github/workflows/ci.yml \
+            .github/workflows/p3a-postprocess-materialize-once.yml
           git add -A
           git status --short
           git diff --cached --name-status
           git diff --cached --check
-          git commit -m "chore: remove temporary P3A materializer"
-          git status --short
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: complete P3A postprocess jobs"
+          test -z "$(git status --short)"
           git rev-parse HEAD
 
-      - name: Push verified P3A tree
+      - name: Push verified P3A implementation
         shell: bash
         run: |
           set -euo pipefail
