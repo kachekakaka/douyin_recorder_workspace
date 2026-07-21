@@ -1,9 +1,12 @@
 import {
   checkRoom,
   createRoom,
+  getManagerStatus,
   getRecording,
   getRooms,
   getStatus,
+  getWorker,
+  reconcileManager,
   setRoomEnabled,
   startRecording,
   stopRecording,
@@ -46,6 +49,17 @@ function formatRecording(recording) {
     : null;
   const suffix = seconds === null ? '' : ` · ${seconds}s`;
   return `${recording.active ? '录制中' : session.status} · ${session.recording_protocol || '-'} · ${session.recording_quality || '-'}${suffix}`;
+}
+
+
+function formatWorker(worker) {
+  if (!worker) return 'worker 状态不可用';
+  const live = worker.last_live_state || 'unknown';
+  const next = worker.next_check_at_ms
+    ? ` · 下次 ${new Date(worker.next_check_at_ms).toLocaleTimeString()}`
+    : '';
+  const error = worker.last_error_code ? ` · ${worker.last_error_code}` : '';
+  return `${worker.lifecycle} · ${live} · offline ${worker.consecutive_offline} · errors ${worker.consecutive_errors}${next}${error}`;
 }
 
 function actionButton(label, action, { disabled = false, className = 'secondary' } = {}) {
@@ -97,6 +111,10 @@ function renderRooms(items) {
     check.className = 'muted';
     check.textContent = formatCheck(room.latest_check);
 
+    const worker = document.createElement('p');
+    worker.className = room.worker?.running ? 'worker-active' : 'muted';
+    worker.textContent = formatWorker(room.worker);
+
     const recording = document.createElement('p');
     recording.className = room.recording?.active ? 'recording-active' : 'muted';
     recording.textContent = formatRecording(room.recording);
@@ -114,7 +132,7 @@ function renderRooms(items) {
       actionButton(room.enabled ? '停用' : '启用', () => setRoomEnabled(room.room_key, !room.enabled)),
     );
 
-    card.append(heading, meta, check, recording, actions);
+    card.append(heading, meta, check, worker, recording, actions);
     list.append(card);
   }
 }
@@ -124,11 +142,11 @@ async function refreshRooms() {
   const rooms = data.items || [];
   const items = await Promise.all(
     rooms.map(async room => {
-      try {
-        return { ...room, recording: await getRecording(room.room_key) };
-      } catch {
-        return { ...room, recording: null };
-      }
+      const [recording, worker] = await Promise.all([
+        getRecording(room.room_key).catch(() => null),
+        getWorker(room.room_key).catch(() => null),
+      ]);
+      return { ...room, recording, worker };
     }),
   );
   renderRooms(items);
@@ -140,7 +158,11 @@ async function refresh(force = false) {
   button.disabled = true;
   clearError();
   try {
-    const [status] = await Promise.all([getStatus(force), refreshRooms()]);
+    const [status, manager] = await Promise.all([
+      getStatus(force),
+      getManagerStatus(),
+      refreshRooms(),
+    ]);
     byId('appState').textContent = status.ready ? '已就绪' : '服务已启动';
     byId('appState').className = status.ready ? 'good' : '';
     byId('versionText').textContent = `v${status.version} · ${status.runtime_instance_id}`;
@@ -148,6 +170,11 @@ async function refresh(force = false) {
     byId('databaseState').className = status.schema_version > 0 ? 'good' : 'bad';
     byId('databasePath').textContent = status.database_path;
     byId('roomCount').textContent = String(status.room_count || 0);
+    byId('managerState').textContent = manager.enabled
+      ? manager.running ? '运行中' : '已启用 / 未运行'
+      : '已禁用';
+    byId('managerState').className = manager.running ? 'good' : manager.enabled ? 'warn' : '';
+    byId('managerDetail').textContent = `${manager.worker_count} 个 worker · 并发检查 ${manager.max_parallel_checks}`;
     setTool('ffmpeg', status.ffmpeg);
     setTool('ffprobe', status.ffprobe);
     const contract = status.protocol_contract;
@@ -187,4 +214,17 @@ byId('roomForm').addEventListener('submit', async event => {
 });
 
 byId('refreshButton').addEventListener('click', () => refresh(true));
+byId('managerReconcile').addEventListener('click', async () => {
+  const button = byId('managerReconcile');
+  button.disabled = true;
+  clearError();
+  try {
+    await reconcileManager();
+    await refresh(true);
+  } catch (cause) {
+    showError(cause);
+  } finally {
+    button.disabled = false;
+  }
+});
 refresh();
