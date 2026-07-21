@@ -1,1 +1,0 @@
-The P2A implementation payload is hashed and validated before application. No payload file remains in the final branch tree.
