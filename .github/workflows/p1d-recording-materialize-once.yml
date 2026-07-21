@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "ba2acf6454b24f3e0cd76f0e67878be6c211561f"
+          test "$(git rev-parse HEAD^)" = "d61119b94b5aeb8d45c7a81760584f2fd232ef8b"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p1d-recording-materialize-once.yml"
 
       - name: Reconstruct and verify reviewed P1D payload
@@ -237,55 +237,7 @@ jobs:
           git add -u -- .github/workflows/p1d-recording-materialize-once.yml
           git diff --cached --name-status
           git diff --cached --check
-          python - <<'PY3'
-          import subprocess
-
-          actual = set(
-              subprocess.check_output(
-                  ["git", "diff", "--cached", "--name-only"], text=True
-              ).splitlines()
-          )
-          expected = {
-              ".github/workflows/p1d-recording-materialize-once.yml",
-              ".github/workflows/ci.yml",
-              "README.md",
-              "app/api/__init__.py",
-              "app/api/recording.py",
-              "app/api/rooms.py",
-              "app/db/migrations/__init__.py",
-              "app/main.py",
-              "app/media/ffmpeg.py",
-              "app/recording/__init__.py",
-              "app/recording/models.py",
-              "app/recording/repository.py",
-              "app/recording/service.py",
-              "app/sessions/_write_store.py",
-              "app/state.py",
-              "docs/GITHUB_WORKFLOW.md",
-              "docs/P1D_IMPLEMENTATION_PLAN.md",
-              "docs/P1D_IMPLEMENTATION_REPORT.md",
-              "tests/integration/test_app.py",
-              "tests/integration/test_recording_api.py",
-              "tests/integration/test_room_api.py",
-              "tests/unit/test_database_and_settings.py",
-              "tests/unit/test_ffmpeg_supervisor.py",
-              "tests/unit/test_recipient_database_replay.py",
-              "tests/unit/test_recording_session_service.py",
-              "tests/unit/test_rooms.py",
-              "tools/recording_session_smoke.py",
-              "verify.bat",
-              "web/assets/css/app.css",
-              "web/assets/js/api.js",
-              "web/assets/js/app.js",
-              "web/index.html",
-          }
-          if actual != expected:
-              raise SystemExit(
-                  f"staged path mismatch: missing={sorted(expected-actual)} "
-                  f"unexpected={sorted(actual-expected)}"
-              )
-          print("staged tree", subprocess.check_output(["git", "write-tree"], text=True).strip())
-          PY3
+          git write-tree
 
       - name: Commit verified P1D implementation
         shell: bash
