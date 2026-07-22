@@ -54,7 +54,8 @@ class FFmpegPostprocessExecutor:
         work_root.mkdir(parents=True, exist_ok=True)
         if work_root.is_symlink():
             raise PostprocessExecutionError("postprocess work 目录不得是符号链接")
-        work_dir = work_root / attempt_id / f"interval-{output.interval_id}"
+        attempt_component = self._attempt_component(attempt_id)
+        work_dir = work_root / attempt_component / f"interval-{output.interval_id}"
         if work_dir.exists() or work_dir.is_symlink():
             raise PostprocessExecutionError("postprocess attempt 工作目录已存在")
         work_dir.mkdir(parents=True)
@@ -94,7 +95,10 @@ class FFmpegPostprocessExecutor:
             source_paths.append(candidate)
         concat_path.write_text(
             "ffconcat version 1.0\n"
-            + "".join(f"file '{self._ffconcat_path(path)}'\n" for path in source_paths),
+            + "".join(
+                f"file '{self._ffconcat_path(path, base_dir=work_dir)}'\n"
+                for path in source_paths
+            ),
             encoding="utf-8",
             newline="\n",
         )
@@ -161,8 +165,7 @@ class FFmpegPostprocessExecutor:
                 return OutputExecutionResult(returncode, stop_stage, False)
             if not writing_path.is_file() or writing_path.is_symlink():
                 raise PostprocessExecutionError("FFmpeg 未生成安全 writing 文件")
-            with writing_path.open("rb") as handle:
-                os.fsync(handle.fileno())
+            self._fsync_file(writing_path)
             os.replace(writing_path, final_path)
             self._fsync_directory(final_path.parent)
             size_bytes = final_path.stat().st_size
@@ -272,8 +275,17 @@ class FFmpegPostprocessExecutor:
             current = current.parent
 
     @staticmethod
-    def _ffconcat_path(path: Path) -> str:
-        value = path.as_posix()
+    def _attempt_component(attempt_id: str) -> str:
+        if not attempt_id:
+            raise PostprocessExecutionError("postprocess attempt ID 不能为空")
+        return hashlib.sha256(attempt_id.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _ffconcat_path(path: Path, *, base_dir: Path) -> str:
+        try:
+            value = Path(os.path.relpath(path, start=base_dir)).as_posix()
+        except ValueError:
+            value = path.as_uri()
         if "'" in value or "\n" in value or "\r" in value:
             raise PostprocessExecutionError("源媒体路径不能安全写入 concat 清单")
         return value
@@ -285,6 +297,13 @@ class FFmpegPostprocessExecutor:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest()
+
+    @staticmethod
+    def _fsync_file(path: Path) -> None:
+        if os.name == "nt":
+            return
+        with path.open("rb") as handle:
+            os.fsync(handle.fileno())
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:

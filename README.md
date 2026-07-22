@@ -2,7 +2,7 @@
 
 抖音团播多直播间录播与“当前推荐收礼人”时间线系统。
 
-> `main` 已合并 P1A–P2A。当前分支实施 **P3A：持久化后处理任务与 recipient 区间导出**；真实目标消息和公网播放仍未验证。
+> `main` 已合并 P1A–P3A。当前分支实施 **P4A：Windows 便携包、恢复资产与 v0.1.0 Release**；真实目标消息仍未验证。
 
 ## 不可改变的业务口径
 
@@ -111,6 +111,16 @@ docs/protocol/P1C_INTERACTIVE_EVIDENCE_RUNBOOK.md
 - 单进程 worker 原子领取，支持 retry、cancel 和应用重启 recovery；
 - FFmpeg concat/trim/stream-copy 使用 `create_subprocess_exec`、`-n` 和 `.writing` 原子落盘；
 - 网页显示任务、输出、重试和取消，不公开 recipient 明文。
+
+### P4A：Windows 便携包与 Release
+
+- Python 3.13 embeddable runtime 和 runtime.lock 固定依赖；
+- 固定 tag 的 BtbN LGPL shared FFmpeg/ffprobe，并校验 checksums SHA-256；
+- 便携版 start/verify/backup 不依赖系统 Python、pip 或 FFmpeg；
+- package manifest、Python dependency/license 清单与 SHA256SUMS；
+- 干净解压后执行 loopback health、FFmpeg Supervisor、Recording Session 和 postprocess smoke；
+- source ZIP 与 Git Bundle 恢复到相同 Git tree；
+- tag 与项目版本严格一致后才允许发布 GitHub Release。
 
 ## 快速开始
 
@@ -229,6 +239,18 @@ python tools/postprocess_smoke.py --duration 2
 
 数据库 replay 只接受显式 synthetic fixture；公开报告不包含 raw payload。它验证 schema v4 投影与既有 reducer 的 Waiting/Active/Unknown 结果一致，但不能替代真实现场协议证据。
 
+## Windows v0.1.0 便携包
+
+GitHub Release 资产中的：
+
+```text
+douyin-recorder-v0.1.0-windows-x64.zip
+```
+
+解压后直接运行 `start.bat`。首次使用建议先运行 `verify.bat`；它会在临时目录执行 manifest、依赖导入、loopback health 和三类本地 FFmpeg smoke，不访问抖音。`windows-asset-SHA256SUMS.txt` 用于核验下载 ZIP。
+
+源码恢复资产同时提供 source ZIP、Git Bundle、source tree manifest 和 SHA-256。`live_verified=false` 仍是正式 Release 的明确限制。
+
 ## GitHub 与防丢
 
 GitHub `main`/tag 是代码唯一权威源。每个可验证里程碑必须 commit + push；未 push 内容不算保存。
@@ -268,6 +290,8 @@ records/    原始媒体、导出和代理；不进 Git
 17. `docs/P2A_IMPLEMENTATION_REPORT.md`
 18. `docs/P3A_IMPLEMENTATION_PLAN.md`
 19. `docs/P3A_IMPLEMENTATION_REPORT.md`
-20. `docs/GITHUB_WORKFLOW.md`
+20. `docs/P4A_RELEASE_PLAN.md`
+21. `docs/P4A_RELEASE_REPORT.md`
+22. `docs/GITHUB_WORKFLOW.md`
 
-架构基线：`v2.0`。P3A 关联 Issue #15；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。
+架构基线：`v2.0`。P4A 关联 Issue #18；真实目标消息事实继续由 Issue #1 跟踪。在 Issue #1 形成去标识、人工审查、可回放的真实 fixture 前，`live_verified=false`。

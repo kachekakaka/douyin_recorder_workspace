@@ -36,8 +36,12 @@ requirements/runtime.lock
 requirements/dev.lock
 ```
 
-主要包括 FastAPI、Starlette、Uvicorn、httpx、websockets、protobuf、aiosqlite、pytest 与 Ruff。它们各自受上游许可证约束。当前仓库不提交这些包的源码或二进制；正式离线运行包/Release 必须生成第三方许可证清单。
+主要包括 FastAPI、Starlette、Uvicorn、httpx、websockets、protobuf、aiosqlite、pytest 与 Ruff。它们各自受上游许可证约束。P4A Windows 包将这些依赖安装到包内 Python，并生成 `python-dependencies.json` 与逐包许可证文件。
+
+## Python 便携运行时
+
+P4A 固定 Python 3.13.14 Windows embeddable x64 package，来源与 SHA-256 记录在 `packaging/release-lock.json`。包内保留 Python 自带 `LICENSE.txt`。
 
 ## FFmpeg
 
-FFmpeg/ffprobe 由操作者安装或后续 Release 单独提供。本仓库不提交 FFmpeg 二进制。发布打包时必须根据实际构建选项履行 LGPL/GPL 及相关第三方组件许可义务。
+P4A 固定 Gyan FFmpeg 7.1 full Windows x64 资产；下载 URL 与 SHA-256 采用 Microsoft winget 官方清单验证值并记录在 `packaging/release-lock.json`。该构建按 GPL-3.0-or-later 分发，包内保留归档自带许可证/NOTICE、构建提供方说明和对应源码地址。项目不修改 FFmpeg。

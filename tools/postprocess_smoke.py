@@ -15,8 +15,24 @@ if str(ROOT) not in sys.path:
 
 from app.db import Database  # noqa: E402
 from app.postprocess import ExportPlanner, PostprocessRepository, PostprocessService  # noqa: E402
+from app.postprocess.executor import FFmpegPostprocessExecutor  # noqa: E402
 from app.settings import Settings  # noqa: E402
 from tools.recording_session_smoke import run_smoke as run_recording_smoke  # noqa: E402
+
+
+class _DiagnosticExecutor:
+    def __init__(self, delegate: FFmpegPostprocessExecutor, *, smoke_root: Path) -> None:
+        self.delegate = delegate
+        self.smoke_root = smoke_root
+        self.last_error: str | None = None
+
+    async def run_output(self, **kwargs):
+        try:
+            return await self.delegate.run_output(**kwargs)
+        except Exception as exc:
+            rendered = f"{type(exc).__name__}: {exc}"
+            self.last_error = rendered.replace(str(self.smoke_root), "<smoke-root>")[:500]
+            raise
 
 
 async def _wait_for_job(repository: PostprocessRepository, job_id: str) -> object:
@@ -74,12 +90,18 @@ async def run_smoke(output_dir: Path, *, duration_seconds: float = 2.0) -> dict[
     database = Database(source_dir / "userdata" / "smoke.db")
     await database.initialize()
     repository = PostprocessRepository(database)
-    service = PostprocessService.create_default(
+    diagnostic_executor = _DiagnosticExecutor(
+        FFmpegPostprocessExecutor(
+            ffmpeg_path=str(ffmpeg),
+            records_dir=source_dir / "records",
+            userdata_dir=source_dir / "userdata",
+        ),
+        smoke_root=output_dir,
+    )
+    service = PostprocessService(
         repository=repository,
         planner=ExportPlanner(database),
-        ffmpeg_path=str(ffmpeg),
-        records_dir=source_dir / "records",
-        userdata_dir=source_dir / "userdata",
+        executor=diagnostic_executor,
         runtime_instance_id="recording-smoke-runtime",
         enabled=True,
         max_attempts=2,
@@ -89,7 +111,11 @@ async def run_smoke(output_dir: Path, *, duration_seconds: float = 2.0) -> dict[
         created = await service.create_export(str(recording["session_id"]))
         job = await _wait_for_job(repository, created.id)
         if job.status != "succeeded" or not job.outputs:
-            raise RuntimeError(f"postprocess smoke 任务失败: {job.error_code or job.status}")
+            detail = diagnostic_executor.last_error or "none"
+            raise RuntimeError(
+                f"postprocess smoke 任务失败: {job.error_code or job.status}; "
+                f"diagnostic={detail}"
+            )
         outputs = []
         for item in job.outputs:
             final_path = source_dir / "records" / item.relative_path
