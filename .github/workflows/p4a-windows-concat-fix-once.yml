@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "753e22e3465087bf10a1faebdceb243b443ec187"
+          test "$(git rev-parse HEAD^)" = "7ee1cc3ccbac704081204e0f1741582854e1ea90"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-windows-concat-fix-once.yml"
 
       - name: Apply relative concat path handling
@@ -120,18 +120,28 @@ jobs:
           git diff --check
           test "$(git diff --name-only | sort)" = "$(printf '%s\n' app/postprocess/executor.py tests/unit/test_postprocess.py | sort)"
 
-      - name: Run complete validation
-        shell: bash
+      - name: Install locked dependencies
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements/dev.lock
           python -m pip check
+
+      - name: Verify repository boundaries
+        run: |
           python tools/verify_repository_baseline.py
           python tools/verify_source.py
-          python -m compileall -q app tests tools
-          python -m ruff check --no-cache app tests tools
-          python -m pytest -q -p no:cacheprovider --tb=short
+
+      - name: Compile Python
+        run: python -m compileall -q app tests tools
+
+      - name: Ruff
+        run: python -m ruff check --no-cache app tests tools
+
+      - name: Pytest
+        run: python -m pytest -q -p no:cacheprovider --tb=short
+
+      - name: Replay and release lock
+        run: |
           python tools/release_package.py validate-lock
           python tools/replay_recipient_fixture.py --quiet
           python tools/replay_recipient_fixture_to_db.py --output "$RUNNER_TEMP/recipient-db.json"
