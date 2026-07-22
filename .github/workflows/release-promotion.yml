@@ -46,7 +46,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "message_file=$message_file" >> "$GITHUB_OUTPUT"
 
-      - name: Confirm exact current main and open protocol trackers
+      - name: Confirm exact current main and open protocol issue
         env:
           GH_TOKEN: ${{ github.token }}
           VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -57,7 +57,6 @@ jobs:
           test "$current_main" = "$VERIFIED_SHA"
           test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
           test "$(gh api "repos/$GITHUB_REPOSITORY/issues/1" --jq '.state')" = "open"
-          test "$(gh api "repos/$GITHUB_REPOSITORY/issues/18" --jq '.state')" = "open"
 
       - name: Create or validate immutable annotated tag
         id: tag
@@ -72,6 +71,7 @@ jobs:
           state="created"
           release_exists="false"
           release_run_id=""
+          release_issue_state="$(gh api "repos/$GITHUB_REPOSITORY/issues/18" --jq '.state')"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
             git fetch --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
@@ -94,10 +94,12 @@ jobs:
                 <<<"$runs_json")"
               test -n "$release_run_id"
             else
+              test "$release_issue_state" = "open"
               test "$tag_commit" = "$VERIFIED_SHA"
               state="validated_unpublished"
             fi
           else
+            test "$release_issue_state" = "open"
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$RELEASE_TAG" "$VERIFIED_SHA" -F "$MESSAGE_FILE"
@@ -111,6 +113,7 @@ jobs:
           test "$(git cat-file -t "$tag_object")" = "tag"
           echo "state=$state" >> "$GITHUB_OUTPUT"
           echo "release_exists=$release_exists" >> "$GITHUB_OUTPUT"
+          echo "release_issue_state=$release_issue_state" >> "$GITHUB_OUTPUT"
           echo "release_run_id=$release_run_id" >> "$GITHUB_OUTPUT"
           echo "object_sha=$tag_object" >> "$GITHUB_OUTPUT"
           echo "commit_sha=$tag_commit" >> "$GITHUB_OUTPUT"
@@ -183,6 +186,7 @@ jobs:
           TAG_OBJECT: ${{ steps.tag.outputs.object_sha }}
           TAG_COMMIT: ${{ steps.tag.outputs.commit_sha }}
           RELEASE_EXISTS: ${{ steps.tag.outputs.release_exists }}
+          RELEASE_ISSUE_STATE: ${{ steps.tag.outputs.release_issue_state }}
           EXISTING_RUN_ID: ${{ steps.tag.outputs.release_run_id }}
           DISPATCH_RUN_ID: ${{ steps.dispatch.outputs.run_id }}
           DISPATCH_STATE: ${{ steps.dispatch.outputs.dispatch_state }}
@@ -204,6 +208,7 @@ jobs:
             --arg tag_object_sha "$TAG_OBJECT" \
             --arg tag_commit_sha "$TAG_COMMIT" \
             --argjson release_exists "$RELEASE_EXISTS" \
+            --arg release_issue_state "$RELEASE_ISSUE_STATE" \
             --arg dispatch_state "$dispatch_state" \
             --argjson release_run_id "$release_run_id" \
             '{
@@ -216,6 +221,7 @@ jobs:
               tag_object_sha: $tag_object_sha,
               tag_commit_sha: $tag_commit_sha,
               release_exists: $release_exists,
+              release_issue_state: $release_issue_state,
               release_workflow_dispatch_state: $dispatch_state,
               release_workflow_run_id: $release_run_id,
               live_verified: false,
