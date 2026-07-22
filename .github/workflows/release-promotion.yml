@@ -1,0 +1,89 @@
+name: Promote verified release tag
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+  issues: read
+
+concurrency:
+  group: release-promotion-main
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote annotated release tag
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact CI-verified main commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Validate release files and immutable protocol gate
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          gate_json="$RUNNER_TEMP/release-tag-gate.json"
+          python tools/release_tag_gate.py --root . --output "$gate_json"
+          tag="$(jq -r '.tag' "$gate_json")"
+          message_file="$RUNNER_TEMP/release-tag-message.txt"
+          jq -r '.message' "$gate_json" > "$message_file"
+          test -n "$tag"
+          test -s "$message_file"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "message_file=$message_file" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm exact current main and open protocol trackers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')"
+          test "$current_main" = "$VERIFIED_SHA"
+          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/issues/1" --jq '.state')" = "open"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/issues/18" --jq '.state')" = "open"
+
+      - name: Create or validate immutable annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.gate.outputs.tag }}
+          MESSAGE_FILE: ${{ steps.gate.outputs.message_file }}
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = "tag"
+            tag_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{}")"
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "Published annotated tag already exists; leaving it unchanged."
+              exit 0
+            fi
+            test "$tag_commit" = "$VERIFIED_SHA"
+            echo "Unpublished annotated tag already exists at the verified commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" "$VERIFIED_SHA" -F "$MESSAGE_FILE"
+          test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = "tag"
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{}")" = "$VERIFIED_SHA"
+          git push origin "refs/tags/$RELEASE_TAG"
