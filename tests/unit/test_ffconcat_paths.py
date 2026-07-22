@@ -38,3 +38,17 @@ def test_attempt_component_is_portable_and_deterministic() -> None:
     assert ":" not in component
     with pytest.raises(PostprocessExecutionError, match="attempt ID"):
         FFmpegPostprocessExecutor._attempt_component("")
+
+
+def test_fsync_file_is_skipped_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "output.mkv"
+    path.write_bytes(b"media")
+
+    def fail_fsync(_descriptor: int) -> None:
+        raise AssertionError("os.fsync must not run on Windows")
+
+    monkeypatch.setattr("app.postprocess.executor.os.name", "nt")
+    monkeypatch.setattr("app.postprocess.executor.os.fsync", fail_fsync)
+    FFmpegPostprocessExecutor._fsync_file(path)
