@@ -150,11 +150,12 @@ def validate_version(root: Path, lock: dict[str, Any], *, tag: str | None = None
 
 def _relative_files(root: Path) -> list[Path]:
     output: list[Path] = []
-    for path in sorted(root.rglob("*")):
+    for path in root.rglob("*"):
         if path.is_symlink():
             raise ReleaseError(f"包内禁止符号链接: {path}")
         if path.is_file():
             output.append(path.relative_to(root))
+    output.sort(key=lambda item: item.as_posix())
     return output
 
 
