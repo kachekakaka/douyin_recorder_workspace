@@ -82,7 +82,7 @@ New-Item -ItemType Directory -Force -Path $pythonRoot | Out-Null
 Expand-Archive -LiteralPath $pythonZip -DestinationPath $pythonRoot -Force
 $pth = Get-ChildItem -LiteralPath $pythonRoot -Filter "python*._pth" | Select-Object -First 1
 if (!$pth) { throw "Python embeddable _pth file missing" }
-@("python313.zip", ".", "Lib\site-packages", "import site") | Set-Content -Encoding ASCII -LiteralPath $pth.FullName
+@("python313.zip", ".", "Lib\site-packages", "..\..", "import site") | Set-Content -Encoding ASCII -LiteralPath $pth.FullName
 $sitePackages = Join-Path $pythonRoot "Lib\site-packages"
 New-Item -ItemType Directory -Force -Path $sitePackages | Out-Null
 python -m pip install --disable-pip-version-check --no-compile --only-binary=:all: --target $sitePackages -r (Join-Path $SourceRoot "requirements\runtime.lock")
