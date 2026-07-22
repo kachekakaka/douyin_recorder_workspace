@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "7ee1cc3ccbac704081204e0f1741582854e1ea90"
+          test "$(git rev-parse HEAD^)" = "b91238bfca1ce47b7f50c807f83627484924370c"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-windows-concat-fix-once.yml"
 
       - name: Apply relative concat path handling
@@ -135,7 +135,19 @@ jobs:
         run: python -m compileall -q app tests tools
 
       - name: Ruff
-        run: python -m ruff check --no-cache app tests tools
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m ruff check --no-cache app tests tools 2>&1 | tee "$RUNNER_TEMP/concat-fix-ruff.log"
+
+      - name: Upload Ruff diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4a-concat-fix-ruff-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/concat-fix-ruff.log
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Pytest
         run: python -m pytest -q -p no:cacheprovider --tb=short
