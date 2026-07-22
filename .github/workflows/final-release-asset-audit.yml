@@ -15,6 +15,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Emit compact immutable Release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.1.0" > "$RUNNER_TEMP/release.json"
+          jq -e '
+            .id == 357811419 and
+            .tag_name == "v0.1.0" and
+            .draft == false and
+            .prerelease == false and
+            (.assets | length == 9) and
+            all(.assets[]; .size > 0 and (.digest | startswith("sha256:")))
+          ' "$RUNNER_TEMP/release.json" >/dev/null
+          jq -c '{
+            release_id: .id,
+            release_name: .name,
+            tag_name: .tag_name,
+            published_at: .published_at,
+            draft: .draft,
+            prerelease: .prerelease,
+            assets: [.assets[] | {name, size, digest}]
+          }' "$RUNNER_TEMP/release.json" | tee "$RUNNER_TEMP/final-release-asset-audit.json"
+
       - name: Checkout report branch tools
         uses: actions/checkout@v4
         with:
@@ -29,15 +54,6 @@ jobs:
           release="$RUNNER_TEMP/release-assets"
           mkdir -p "$release"
           gh release download v0.1.0 --dir "$release"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.1.0" > "$RUNNER_TEMP/release.json"
-          jq -e '
-            .id == 357811419 and
-            .tag_name == "v0.1.0" and
-            .draft == false and
-            .prerelease == false and
-            (.assets | length == 9) and
-            all(.assets[]; .size > 0 and (.digest | startswith("sha256:")))
-          ' "$RUNNER_TEMP/release.json" >/dev/null
 
       - name: Verify asset checksums and Windows package
         shell: bash
@@ -96,20 +112,6 @@ jobs:
           }
           assert actual == expected, (sorted(expected - actual), sorted(actual - expected))
           PY
-
-      - name: Emit compact immutable audit data
-        shell: bash
-        run: |
-          set -euo pipefail
-          jq -c '{
-            release_id: .id,
-            release_name: .name,
-            tag_name: .tag_name,
-            published_at: .published_at,
-            draft: .draft,
-            prerelease: .prerelease,
-            assets: [.assets[] | {name, size, digest}]
-          }' "$RUNNER_TEMP/release.json" | tee "$RUNNER_TEMP/final-release-asset-audit.json"
 
       - name: Upload independent audit record
         uses: actions/upload-artifact@v4
