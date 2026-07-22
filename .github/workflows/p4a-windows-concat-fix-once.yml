@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "d294b627526eab947c57f188800657c637d648ee"
+          test "$(git rev-parse HEAD^)" = "2658da60fb0318d1750c89f6e335081c51737315"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-windows-concat-fix-once.yml"
 
       - name: Apply relative concat path handling
@@ -51,12 +51,10 @@ jobs:
 
           executor = Path("app/postprocess/executor.py")
           text = executor.read_text(encoding="utf-8")
-          old_call = "self._ffconcat_path(path)"
-          new_call = "self._ffconcat_path(path, base_dir=work_dir)"
-          old_line = '''            + "".join(f"file '{self._ffconcat_path(path, base_dir=work_dir)}\\n" for path in source_paths),
+          old_line = r'''            + "".join(f"file '{self._ffconcat_path(path)}'\n" for path in source_paths),
           '''
-          new_lines = '''            + "".join(
-              f"file '{self._ffconcat_path(path, base_dir=work_dir)}\\n"
+          new_lines = r'''            + "".join(
+              f"file '{self._ffconcat_path(path, base_dir=work_dir)}\n"
               for path in source_paths
           ),
           '''
@@ -77,58 +75,52 @@ jobs:
                       raise PostprocessExecutionError("源媒体路径不能安全写入 concat 清单")
                   return value
           '''
-          if text.count(old_call) != 1 or old_helper not in text:
+          if old_line not in text or old_helper not in text:
               raise SystemExit("expected concat implementation syntax was not found")
-          text = text.replace(old_call, new_call, 1)
-          if old_line not in text:
-              raise SystemExit("expected concat list line was not found")
           executor.write_text(
               text.replace(old_line, new_lines, 1).replace(old_helper, new_helper, 1),
               encoding="utf-8",
           )
 
-          tests = Path("tests/unit/test_postprocess.py")
-          test_text = tests.read_text(encoding="utf-8")
-          marker = "def test_ffmpeg_postprocess_can_adopt_atomic_existing_output_on_retry(\n"
-          addition = '''def test_ffmpeg_postprocess_concat_paths_are_relative_with_uri_fallback(
-              tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-          ) -> None:
-              source = (
-                  tmp_path / "records" / "room" / "session" / "media" / "00000.mkv"
-              )
-              source.parent.mkdir(parents=True)
-              source.write_bytes(b"media")
-              work_dir = (
-                  tmp_path
-                  / "userdata"
-                  / "postprocess-work"
-                  / "attempt"
-                  / "interval-1"
-              )
-              work_dir.mkdir(parents=True)
-              relative = FFmpegPostprocessExecutor._ffconcat_path(
-                  source, base_dir=work_dir
-              )
-              assert relative == "../../../../records/room/session/media/00000.mkv"
+          test_path = Path("tests/unit/test_ffconcat_paths.py")
+          if test_path.exists():
+              raise SystemExit("portable FFconcat test already exists")
+          test_path.write_text(
+              '''from __future__ import annotations
 
-              def fail_relpath(*_args: object, **_kwargs: object) -> str:
-                  raise ValueError
+from pathlib import Path
 
-              monkeypatch.setattr(
-                  "app.postprocess.executor.os.path.relpath", fail_relpath
-              )
-              assert FFmpegPostprocessExecutor._ffconcat_path(
-                  source, base_dir=work_dir
-              ) == source.as_uri()
+import pytest
+
+from app.postprocess.executor import FFmpegPostprocessExecutor
 
 
-          '''
-          if marker not in test_text:
-              raise SystemExit("test insertion marker was not found")
-          tests.write_text(test_text.replace(marker, addition + marker, 1), encoding="utf-8")
+def test_ffconcat_paths_are_relative_with_uri_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "records" / "room" / "session" / "media" / "00000.mkv"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"media")
+    work_dir = tmp_path / "userdata" / "postprocess-work" / "attempt" / "interval-1"
+    work_dir.mkdir(parents=True)
+
+    assert FFmpegPostprocessExecutor._ffconcat_path(
+        source, base_dir=work_dir
+    ) == "../../../../records/room/session/media/00000.mkv"
+
+    def fail_relpath(*_args: object, **_kwargs: object) -> str:
+        raise ValueError
+
+    monkeypatch.setattr("app.postprocess.executor.os.path.relpath", fail_relpath)
+    assert FFmpegPostprocessExecutor._ffconcat_path(
+        source, base_dir=work_dir
+    ) == source.as_uri()
+''',
+              encoding="utf-8",
+          )
           PY
           git diff --check
-          test "$(git diff --name-only | sort)" = "$(printf '%s\n' app/postprocess/executor.py tests/unit/test_postprocess.py | sort)"
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' app/postprocess/executor.py tests/unit/test_ffconcat_paths.py | sort)"
 
       - name: Install locked dependencies
         run: |
@@ -162,8 +154,8 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/postprocess/executor.py tests/unit/test_postprocess.py
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' app/postprocess/executor.py tests/unit/test_postprocess.py | sort)"
+          git add app/postprocess/executor.py tests/unit/test_ffconcat_paths.py
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' app/postprocess/executor.py tests/unit/test_ffconcat_paths.py | sort)"
           git commit -m "fix: use portable FFconcat source paths"
           git push origin "HEAD:feature/p4a-release-packaging"
           git rev-parse HEAD
