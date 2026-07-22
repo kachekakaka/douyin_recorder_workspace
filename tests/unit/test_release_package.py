@@ -120,6 +120,7 @@ def test_release_workflow_and_portable_scripts_keep_required_gates() -> None:
     assert "ffmpeg.checksums_url" not in build
     assert "config\\config.json.default" in build
     assert "config\\config.json\"" not in build
+    assert '"..\\.."' in build
     assert "runtime\\python\\python.exe" in portable_start
     assert "prepare-python.bat" not in portable_start
     assert "health-smoke.ps1" in portable_verify
