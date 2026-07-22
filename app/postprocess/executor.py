@@ -94,7 +94,10 @@ class FFmpegPostprocessExecutor:
             source_paths.append(candidate)
         concat_path.write_text(
             "ffconcat version 1.0\n"
-            + "".join(f"file '{self._ffconcat_path(path)}'\n" for path in source_paths),
+            + "".join(
+                f"file '{self._ffconcat_path(path, base_dir=work_dir)}'\n"
+                for path in source_paths
+            ),
             encoding="utf-8",
             newline="\n",
         )
@@ -272,8 +275,11 @@ class FFmpegPostprocessExecutor:
             current = current.parent
 
     @staticmethod
-    def _ffconcat_path(path: Path) -> str:
-        value = path.as_posix()
+    def _ffconcat_path(path: Path, *, base_dir: Path) -> str:
+        try:
+            value = Path(os.path.relpath(path, start=base_dir)).as_posix()
+        except ValueError:
+            value = path.as_uri()
         if "'" in value or "\n" in value or "\r" in value:
             raise PostprocessExecutionError("源媒体路径不能安全写入 concat 清单")
         return value
