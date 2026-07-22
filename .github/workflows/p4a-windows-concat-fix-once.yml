@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD^)" = "c78d7fb716778963f7d602957ae9bd00e5fa8f03"
+          test "$(git rev-parse HEAD^)" = "753e22e3465087bf10a1faebdceb243b443ec187"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/p4a-windows-concat-fix-once.yml"
 
       - name: Apply relative concat path handling
@@ -51,31 +51,16 @@ jobs:
 
           executor = Path("app/postprocess/executor.py")
           text = executor.read_text(encoding="utf-8")
-          old_write = '''        concat_path.write_text(
-              "ffconcat version 1.0\n"
-              + "".join(f"file '{self._ffconcat_path(path)}'\n" for path in source_paths),
-              encoding="utf-8",
-              newline="\n",
-          )
-          '''
-          new_write = '''        concat_path.write_text(
-              "ffconcat version 1.0\n"
-              + "".join(
-                  f"file '{self._ffconcat_path(path, base_dir=work_dir)}'\n"
-                  for path in source_paths
-              ),
-              encoding="utf-8",
-              newline="\n",
-          )
-          '''
-          old_helper = '''    @staticmethod
+          old_call = "self._ffconcat_path(path)"
+          new_call = "self._ffconcat_path(path, base_dir=work_dir)"
+          old_helper = r'''    @staticmethod
               def _ffconcat_path(path: Path) -> str:
                   value = path.as_posix()
                   if "'" in value or "\n" in value or "\r" in value:
                       raise PostprocessExecutionError("源媒体路径不能安全写入 concat 清单")
                   return value
           '''
-          new_helper = '''    @staticmethod
+          new_helper = r'''    @staticmethod
               def _ffconcat_path(path: Path, *, base_dir: Path) -> str:
                   try:
                       value = Path(os.path.relpath(path, start=base_dir)).as_posix()
@@ -85,30 +70,43 @@ jobs:
                       raise PostprocessExecutionError("源媒体路径不能安全写入 concat 清单")
                   return value
           '''
-          if old_write not in text or old_helper not in text:
-              raise SystemExit("expected concat implementation blocks were not found")
+          if text.count(old_call) != 1 or old_helper not in text:
+              raise SystemExit("expected concat implementation syntax was not found")
           executor.write_text(
-              text.replace(old_write, new_write).replace(old_helper, new_helper),
+              text.replace(old_call, new_call, 1).replace(old_helper, new_helper, 1),
               encoding="utf-8",
           )
 
           tests = Path("tests/unit/test_postprocess.py")
           test_text = tests.read_text(encoding="utf-8")
-          marker = '''def test_ffmpeg_postprocess_can_adopt_atomic_existing_output_on_retry(
-          '''
+          marker = "def test_ffmpeg_postprocess_can_adopt_atomic_existing_output_on_retry(\n"
           addition = '''def test_ffmpeg_postprocess_concat_paths_are_relative_with_uri_fallback(
               tmp_path: Path, monkeypatch: pytest.MonkeyPatch
           ) -> None:
-              source = tmp_path / "records" / "room" / "session" / "media" / "00000.mkv"
+              source = (
+                  tmp_path / "records" / "room" / "session" / "media" / "00000.mkv"
+              )
               source.parent.mkdir(parents=True)
               source.write_bytes(b"media")
-              work_dir = tmp_path / "userdata" / "postprocess-work" / "attempt" / "interval-1"
+              work_dir = (
+                  tmp_path
+                  / "userdata"
+                  / "postprocess-work"
+                  / "attempt"
+                  / "interval-1"
+              )
               work_dir.mkdir(parents=True)
               relative = FFmpegPostprocessExecutor._ffconcat_path(
                   source, base_dir=work_dir
               )
               assert relative == "../../../../records/room/session/media/00000.mkv"
-              monkeypatch.setattr("app.postprocess.executor.os.path.relpath", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError()))
+
+              def fail_relpath(*_args: object, **_kwargs: object) -> str:
+                  raise ValueError
+
+              monkeypatch.setattr(
+                  "app.postprocess.executor.os.path.relpath", fail_relpath
+              )
               assert FFmpegPostprocessExecutor._ffconcat_path(
                   source, base_dir=work_dir
               ) == source.as_uri()
