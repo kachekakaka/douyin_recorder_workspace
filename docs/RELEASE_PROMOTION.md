@@ -10,11 +10,16 @@
 3. 校验对应 `docs/releases/v<version>.md` 非空；
 4. 强制要求目标 method 保持
    `WebcastGroupLiveGiftRecipientRecommendMessage` 且 `live_verified=false`；
-5. 强制要求 Issue #1 和 Issue #18 仍为 Open；
-6. tag 不存在时，在精确 CI commit 创建 annotated tag 并普通 push；
-7. 尚未发布的 tag 已存在时，只接受 annotated tag 且解引用 commit 完全一致；
-8. 已有正式 Release 时，验证成功的 exact-tag Release workflow 后保持 tag 不变；
-9. 永不 force push、删除或覆盖 tag。
+5. Issue #1 作为真实协议证据门禁始终必须为 Open；
+6. tag 不存在或尚未形成正式 Release 时，当前发布 Issue #18 必须为 Open；
+7. 正式 Release 已存在并通过 immutable 校验后，Issue #18 可以是 Open 或 Closed；
+8. tag 不存在时，在精确 CI commit 创建 annotated tag并普通 push；
+9. 尚未发布的 tag 已存在时，只接受 annotated tag 且解引用 commit 完全一致；
+10. 已有正式 Release 时，验证成功的 exact-tag Release workflow 后保持 tag 不变；
+11. 永不 force push、删除或覆盖 tag。
+
+这样，Issue #18 可在 v0.1.0 完成后正常关闭，后续 `main` CI 仍会只读复核既有
+annotated tag/Release，而不会因为已完成的发布追踪 Issue 为 Closed 产生红灯。
 
 Actions 的仓库 `GITHUB_TOKEN` 推送 tag 不会递归触发普通 `push` workflow。因此，
 promotion 在完成 tag 门禁后，显式对该 tag 执行：
