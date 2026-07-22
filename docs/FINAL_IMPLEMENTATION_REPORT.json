@@ -1,0 +1,279 @@
+{
+  "schema_version": 1,
+  "project": "kachekakaka/douyin_recorder_workspace",
+  "version": "0.1.0",
+  "report_generated_from_github": true,
+  "release_source": {
+    "main_sha": "b8056289ea9c18504675ff1dd43df84a977b2436",
+    "tag_name": "v0.1.0",
+    "tag_type": "annotated",
+    "tag_object_sha": "567d8d9dc6559226c76625cd4cc0df040b1b903c",
+    "tag_commit_sha": "b8056289ea9c18504675ff1dd43df84a977b2436"
+  },
+  "release": {
+    "id": 357811419,
+    "name": "Douyin Recorder v0.1.0",
+    "published_at": "2026-07-22T06:21:41Z",
+    "target_commitish": "main",
+    "draft": false,
+    "prerelease": false,
+    "workflow_run_id": 29896406871,
+    "workflow_run_attempt": 1,
+    "jobs": {
+      "build_and_verify_windows_x64_package": "success",
+      "build_and_restore_source_assets": "success",
+      "publish_github_release": "success"
+    }
+  },
+  "automation": {
+    "release_source_main_ci_run_id": 29896339087,
+    "tag_promotion_run_id": 29896396873,
+    "independent_release_asset_audit_run_id": 29897165335,
+    "independent_release_asset_audit_conclusion": "success"
+  },
+  "assets": [
+    {
+      "name": "douyin-recorder-v0.1.0-source.bundle",
+      "size": 638856,
+      "digest": "sha256:97cbe06f43e7d241d36bac2b607931835bfa023750921752f307e5e7a2467ce5"
+    },
+    {
+      "name": "douyin-recorder-v0.1.0-source.zip",
+      "size": 368885,
+      "digest": "sha256:ee3758927e1f45222e80eeb8431d86051598ab87cc502550afed4df54cdc837d"
+    },
+    {
+      "name": "douyin-recorder-v0.1.0-windows-x64.zip",
+      "size": 197099060,
+      "digest": "sha256:13a66bccdf8990db948ed69bf76c06b03ef476483dbe298a069323070002a523"
+    },
+    {
+      "name": "python-dependencies.json",
+      "size": 4778,
+      "digest": "sha256:a8aaad6dfec2231437966706ed9a6a3d4bfe76b41e3261ab08768e28e23e14fd"
+    },
+    {
+      "name": "source-SHA256SUMS.txt",
+      "size": 295,
+      "digest": "sha256:9bf80b4b6bdf6f1030842d98f1ce14f90b4541d7aa6df60d141e49c3c5d422d8"
+    },
+    {
+      "name": "source-tree-manifest.json",
+      "size": 34454,
+      "digest": "sha256:b3fdb73cb474ae30506ab76e0ae25cf7792ea07d3c93a2d76c3772760107e981"
+    },
+    {
+      "name": "windows-asset-SHA256SUMS.txt",
+      "size": 106,
+      "digest": "sha256:3eb85a15642eff22149b7aeac70432370cece734a55bb6c2423e5869c2c8f0a2"
+    },
+    {
+      "name": "windows-manifest.json",
+      "size": 155711,
+      "digest": "sha256:ed81a93836f3c7878afa99c71143963e4c2ba29b0db4b72cbcfd3e9237aa98a0"
+    },
+    {
+      "name": "windows-SHA256SUMS.txt",
+      "size": 98012,
+      "digest": "sha256:b35b87a13d117ca2292de2e814493242c77f7aaf4e8e0d079c580fbd6dcbd3c0"
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 4,
+      "stage": "P1A",
+      "state": "merged",
+      "merge_sha": "e2fee9a320529935e4d88f587b12f233d848121f"
+    },
+    {
+      "number": 8,
+      "stage": "P1B",
+      "state": "merged",
+      "merge_sha": "a7cf68eb96d14200fb8541108e632ca40559546c"
+    },
+    {
+      "number": 10,
+      "stage": "P1C",
+      "state": "merged",
+      "merge_sha": "e7e98117a574465061ebe07f4ca623d4ae101b32"
+    },
+    {
+      "number": 12,
+      "stage": "P1D",
+      "state": "merged",
+      "merge_sha": "dd6a8b39659ab5d891cd03db1e31c727dec5a7ba"
+    },
+    {
+      "number": 14,
+      "stage": "P2A",
+      "state": "merged",
+      "merge_sha": "d492e0e881f4fe39692e1d0c979554f87e6a4b88"
+    },
+    {
+      "number": 16,
+      "stage": "P3A",
+      "state": "merged",
+      "merge_sha": "c62768351f32fa044cfb27b83775bdc5438a3054"
+    },
+    {
+      "number": 17,
+      "stage": "P4A",
+      "state": "merged",
+      "merge_sha": "0d4c41162a9c4dc4f5f4645ce3112e170aaf7d86"
+    },
+    {
+      "number": 19,
+      "stage": "release-promotion",
+      "state": "merged",
+      "merge_sha": "b8056289ea9c18504675ff1dd43df84a977b2436"
+    },
+    {
+      "number": 20,
+      "stage": "final-report",
+      "state_at_report_generation": "draft",
+      "merge_sha": null
+    }
+  ],
+  "database": {
+    "schema_version": 6
+  },
+  "api": {
+    "status": [
+      "GET /healthz",
+      "GET /readyz",
+      "GET /api/status"
+    ],
+    "rooms": [
+      "GET /api/rooms",
+      "POST /api/rooms",
+      "GET /api/rooms/{room_key}",
+      "PATCH /api/rooms/{room_key}",
+      "POST /api/rooms/{room_key}/actions/check",
+      "POST /api/rooms/{room_key}/actions/enable",
+      "POST /api/rooms/{room_key}/actions/disable"
+    ],
+    "recipient": [
+      "GET /api/rooms/{room_key}/recipient-state",
+      "GET /api/rooms/{room_key}/recipient-events",
+      "GET /api/rooms/{room_key}/recipient-intervals"
+    ],
+    "recording": [
+      "POST /api/rooms/{room_key}/actions/start-recording",
+      "POST /api/rooms/{room_key}/actions/stop-recording",
+      "GET /api/rooms/{room_key}/recording",
+      "GET /api/rooms/{room_key}/recording/sessions",
+      "GET /api/rooms/{room_key}/recording/segments"
+    ],
+    "manager": [
+      "GET /api/manager/status",
+      "POST /api/manager/actions/reconcile",
+      "GET /api/rooms/{room_key}/worker"
+    ],
+    "jobs": [
+      "POST /api/recording/sessions/{session_id}/actions/create-export",
+      "GET /api/jobs",
+      "GET /api/jobs/{job_id}",
+      "POST /api/jobs/{job_id}/actions/retry",
+      "POST /api/jobs/{job_id}/actions/cancel"
+    ]
+  },
+  "verification": {
+    "main_ci": {
+      "conclusion": "success",
+      "python": [
+        "3.12",
+        "3.13"
+      ],
+      "windows_verify_bat": true,
+      "frontend_syntax": true,
+      "repository_baseline": true,
+      "source_boundary": true,
+      "compileall": true,
+      "ruff": true,
+      "pytest": true,
+      "deterministic_recipient_replay": true,
+      "deterministic_sqlite_replay": true,
+      "ffmpeg_supervisor_smoke": true,
+      "recording_session_smoke": true,
+      "postprocess_smoke": true,
+      "source_recovery": true
+    },
+    "windows_package": {
+      "clean_extraction": true,
+      "manifest_matches_zip": true,
+      "internal_sha256s": true,
+      "external_zip_sha256": true,
+      "portable_python": true,
+      "loopback_health": true,
+      "ffmpeg_supervisor_smoke": true,
+      "recording_session_smoke": true,
+      "postprocess_smoke": true,
+      "python_dependency_manifest_nonempty": true,
+      "ffmpeg_notices_and_licenses_present": true,
+      "forbidden_file_scan": true
+    },
+    "source_assets": {
+      "source_sha256s": true,
+      "source_zip_manifest": true,
+      "git_bundle_verify": true,
+      "git_bundle_clone": true,
+      "restored_head_matches_tag": true,
+      "restored_tree_matches_tag": true,
+      "repository_baseline": true
+    }
+  },
+  "runtime_dependencies": {
+    "python": {
+      "version": "3.13.14",
+      "license": "Python-2.0"
+    },
+    "ffmpeg": {
+      "provider": "GyanD/codexffmpeg",
+      "tag": "7.1",
+      "asset": "ffmpeg-7.1-full_build.zip",
+      "license": "GPL-3.0-or-later"
+    }
+  },
+  "protocol": {
+    "target_method": "WebcastGroupLiveGiftRecipientRecommendMessage",
+    "live_verified": false,
+    "issue_1_must_remain_open": true,
+    "synthetic_fixture_verified_semantics": [
+      "Waiting before first valid event",
+      "Active with explicit recipient",
+      "Unknown for empty recipient",
+      "Unknown after IM disconnect",
+      "reconnect does not restore previous recipient",
+      "duplicate counting",
+      "late event does not roll back current state",
+      "recipient switch closes and opens intervals",
+      "recipient changes do not restart FFmpeg",
+      "64-bit IDs remain strings"
+    ],
+    "unverified_live_facts": [
+      "current interactive-browser IM WSS establishment",
+      "current target method",
+      "current protobuf field numbers and nesting",
+      "recipient user ID and open ID fields",
+      "empty recipient encoding",
+      "duplicate, switch and reconnect sequences",
+      "change_reason_enum meaning",
+      "server timestamp field and unit",
+      "receive latency distribution",
+      "regional, login-state and risk-control differences"
+    ]
+  },
+  "security_boundary": {
+    "loopback_only": true,
+    "public_management": false,
+    "signed_media_url_memory_only": true,
+    "secrets_or_raw_payload_in_api_sqlite_logs_release": false,
+    "output_no_overwrite": true,
+    "symlink_and_path_traversal_rejected": true,
+    "redis": false,
+    "celery": false,
+    "postgresql": false,
+    "multi_machine": false,
+    "identity_inference_fallbacks": false
+  }
+}
