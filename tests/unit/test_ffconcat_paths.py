@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
 
-from app.postprocess.executor import FFmpegPostprocessExecutor
+from app.postprocess.executor import FFmpegPostprocessExecutor, PostprocessExecutionError
 
 
 def test_ffconcat_paths_are_relative_with_uri_fallback(
@@ -27,3 +28,13 @@ def test_ffconcat_paths_are_relative_with_uri_fallback(
     assert FFmpegPostprocessExecutor._ffconcat_path(
         source, base_dir=work_dir
     ) == source.as_uri()
+
+
+def test_attempt_component_is_portable_and_deterministic() -> None:
+    attempt_id = "0123456789abcdef:1"
+    component = FFmpegPostprocessExecutor._attempt_component(attempt_id)
+    assert component == hashlib.sha256(attempt_id.encode("utf-8")).hexdigest()
+    assert len(component) == 64
+    assert ":" not in component
+    with pytest.raises(PostprocessExecutionError, match="attempt ID"):
+        FFmpegPostprocessExecutor._attempt_component("")
