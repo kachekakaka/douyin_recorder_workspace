@@ -165,8 +165,7 @@ class FFmpegPostprocessExecutor:
                 return OutputExecutionResult(returncode, stop_stage, False)
             if not writing_path.is_file() or writing_path.is_symlink():
                 raise PostprocessExecutionError("FFmpeg 未生成安全 writing 文件")
-            with writing_path.open("rb") as handle:
-                os.fsync(handle.fileno())
+            self._fsync_file(writing_path)
             os.replace(writing_path, final_path)
             self._fsync_directory(final_path.parent)
             size_bytes = final_path.stat().st_size
@@ -298,6 +297,13 @@ class FFmpegPostprocessExecutor:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest()
+
+    @staticmethod
+    def _fsync_file(path: Path) -> None:
+        if os.name == "nt":
+            return
+        with path.open("rb") as handle:
+            os.fsync(handle.fileno())
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:
