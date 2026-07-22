@@ -54,7 +54,8 @@ class FFmpegPostprocessExecutor:
         work_root.mkdir(parents=True, exist_ok=True)
         if work_root.is_symlink():
             raise PostprocessExecutionError("postprocess work 目录不得是符号链接")
-        work_dir = work_root / attempt_id / f"interval-{output.interval_id}"
+        attempt_component = self._attempt_component(attempt_id)
+        work_dir = work_root / attempt_component / f"interval-{output.interval_id}"
         if work_dir.exists() or work_dir.is_symlink():
             raise PostprocessExecutionError("postprocess attempt 工作目录已存在")
         work_dir.mkdir(parents=True)
@@ -273,6 +274,12 @@ class FFmpegPostprocessExecutor:
             if current == current.parent:
                 raise PostprocessExecutionError("路径不属于允许根目录")
             current = current.parent
+
+    @staticmethod
+    def _attempt_component(attempt_id: str) -> str:
+        if not attempt_id:
+            raise PostprocessExecutionError("postprocess attempt ID 不能为空")
+        return hashlib.sha256(attempt_id.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _ffconcat_path(path: Path, *, base_dir: Path) -> str:
