@@ -6,9 +6,9 @@ on:
     types: [completed]
 
 permissions:
-  actions: read
+  actions: write
   contents: write
-  issues: read
+  issues: write
 
 concurrency:
   group: release-promotion-main
@@ -60,6 +60,7 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/issues/18" --jq '.state')" = "open"
 
       - name: Create or validate immutable annotated tag
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.gate.outputs.tag }}
@@ -68,22 +69,177 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          state="created"
+          release_exists="false"
+          release_run_id=""
+
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
             git fetch --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
             test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = "tag"
             tag_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{}")"
             if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-              echo "Published annotated tag already exists; leaving it unchanged."
-              exit 0
+              release_exists="true"
+              state="published_immutable"
+              release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+              test "$(jq -r '.draft' <<<"$release_json")" = "false"
+              test "$(jq -r '.prerelease' <<<"$release_json")" = "false"
+              runs_json="$(gh run list \
+                --workflow release.yml \
+                --commit "$tag_commit" \
+                --event workflow_dispatch \
+                --limit 20 \
+                --json databaseId,status,conclusion,headSha)"
+              release_run_id="$(jq -r --arg sha "$tag_commit" \
+                '[.[] | select(.headSha == $sha and .status == "completed" and .conclusion == "success")][0].databaseId // empty' \
+                <<<"$runs_json")"
+              test -n "$release_run_id"
+            else
+              test "$tag_commit" = "$VERIFIED_SHA"
+              state="validated_unpublished"
             fi
-            test "$tag_commit" = "$VERIFIED_SHA"
-            echo "Unpublished annotated tag already exists at the verified commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" "$VERIFIED_SHA" -F "$MESSAGE_FILE"
+            test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = "tag"
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{}")" = "$VERIFIED_SHA"
+            git push origin "refs/tags/$RELEASE_TAG"
+            tag_commit="$VERIFIED_SHA"
+          fi
+
+          tag_object="$(git rev-parse "refs/tags/$RELEASE_TAG")"
+          test "$(git cat-file -t "$tag_object")" = "tag"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "release_exists=$release_exists" >> "$GITHUB_OUTPUT"
+          echo "release_run_id=$release_run_id" >> "$GITHUB_OUTPUT"
+          echo "object_sha=$tag_object" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$tag_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch exact-tag Release workflow
+        id: dispatch
+        if: steps.tag.outputs.release_exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.gate.outputs.tag }}
+          TAG_COMMIT: ${{ steps.tag.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs_json="$(gh run list \
+            --workflow release.yml \
+            --commit "$TAG_COMMIT" \
+            --event workflow_dispatch \
+            --limit 20 \
+            --json databaseId,status,conclusion,headSha,createdAt)"
+
+          active_id="$(jq -r --arg sha "$TAG_COMMIT" \
+            '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress"))][0].databaseId // empty' \
+            <<<"$runs_json")"
+          failed_id="$(jq -r --arg sha "$TAG_COMMIT" \
+            '[.[] | select(.headSha == $sha and .status == "completed" and .conclusion != "success")][0].databaseId // empty' \
+            <<<"$runs_json")"
+          succeeded_id="$(jq -r --arg sha "$TAG_COMMIT" \
+            '[.[] | select(.headSha == $sha and .status == "completed" and .conclusion == "success")][0].databaseId // empty' \
+            <<<"$runs_json")"
+
+          if [[ -n "$failed_id" ]]; then
+            echo "Existing Release workflow failed: $failed_id" >&2
+            exit 1
+          fi
+          if [[ -n "$succeeded_id" ]]; then
+            echo "Successful Release workflow exists but no Release is visible: $succeeded_id" >&2
+            exit 1
+          fi
+          if [[ -n "$active_id" ]]; then
+            echo "run_id=$active_id" >> "$GITHUB_OUTPUT"
+            echo "dispatch_state=already_active" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$RELEASE_TAG" "$VERIFIED_SHA" -F "$MESSAGE_FILE"
-          test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = "tag"
-          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{}")" = "$VERIFIED_SHA"
-          git push origin "refs/tags/$RELEASE_TAG"
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run release.yml --ref "$RELEASE_TAG"
+          run_id=""
+          for _ in {1..20}; do
+            sleep 3
+            run_id="$(gh run list \
+              --workflow release.yml \
+              --commit "$TAG_COMMIT" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha,createdAt \
+              --jq ".[] | select(.headSha == \"$TAG_COMMIT\" and .createdAt >= \"$before\") | .databaseId" \
+              | head -n 1)"
+            [[ -n "$run_id" ]] && break
+          done
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "dispatch_state=created" >> "$GITHUB_OUTPUT"
+
+      - name: Record release-promotion audit on Issue 18
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.gate.outputs.tag }}
+          TAG_STATE: ${{ steps.tag.outputs.state }}
+          TAG_OBJECT: ${{ steps.tag.outputs.object_sha }}
+          TAG_COMMIT: ${{ steps.tag.outputs.commit_sha }}
+          RELEASE_EXISTS: ${{ steps.tag.outputs.release_exists }}
+          EXISTING_RUN_ID: ${{ steps.tag.outputs.release_run_id }}
+          DISPATCH_RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          DISPATCH_STATE: ${{ steps.dispatch.outputs.dispatch_state }}
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_CI_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_run_id="${DISPATCH_RUN_ID:-$EXISTING_RUN_ID}"
+          dispatch_state="${DISPATCH_STATE:-not_required}"
+          audit_json="$RUNNER_TEMP/release-promotion-audit.json"
+          jq -n \
+            --argjson promotion_run_id "$GITHUB_RUN_ID" \
+            --argjson promotion_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --argjson source_ci_run_id "$SOURCE_CI_RUN_ID" \
+            --arg verified_main_sha "$VERIFIED_SHA" \
+            --arg tag "$RELEASE_TAG" \
+            --arg tag_state "$TAG_STATE" \
+            --arg tag_object_sha "$TAG_OBJECT" \
+            --arg tag_commit_sha "$TAG_COMMIT" \
+            --argjson release_exists "$RELEASE_EXISTS" \
+            --arg dispatch_state "$dispatch_state" \
+            --argjson release_run_id "$release_run_id" \
+            '{
+              promotion_workflow_run_id: $promotion_run_id,
+              promotion_workflow_run_attempt: $promotion_run_attempt,
+              source_ci_run_id: $source_ci_run_id,
+              verified_main_sha: $verified_main_sha,
+              tag: $tag,
+              tag_state: $tag_state,
+              tag_object_sha: $tag_object_sha,
+              tag_commit_sha: $tag_commit_sha,
+              release_exists: $release_exists,
+              release_workflow_dispatch_state: $dispatch_state,
+              release_workflow_run_id: $release_run_id,
+              live_verified: false,
+              protocol_issue: 1
+            }' > "$audit_json"
+
+          marker="<!-- release-promotion-run:$GITHUB_RUN_ID -->"
+          body="$RUNNER_TEMP/release-promotion-audit.md"
+          {
+            echo "$marker"
+            echo "## Release promotion audit"
+            echo
+            echo '```json'
+            cat "$audit_json"
+            echo '```'
+          } > "$body"
+
+          comment_id="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/18/comments" \
+            --jq ".[] | select(.body | contains(\"$marker\")) | .id" | head -n 1)"
+          if [[ -n "$comment_id" ]]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -F "body=@$body" >/dev/null
+          else
+            gh issue comment 18 --body-file "$body" >/dev/null
+          fi

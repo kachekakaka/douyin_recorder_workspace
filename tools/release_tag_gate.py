@@ -102,7 +102,11 @@ def inspect_release_tag_gate(root: Path) -> ReleaseTagGate:
     if not notes_path.is_file() or notes_path.is_symlink() or notes_path.stat().st_size == 0:
         raise ReleaseTagGateError(f"缺少非空 Release notes：{release_notes}")
 
-    first_release = "首个 Windows x64 可恢复发布" if version == "0.1.0" else "Windows x64 可恢复发布"
+    first_release = (
+        "首个 Windows x64 可恢复发布"
+        if version == "0.1.0"
+        else "Windows x64 可恢复发布"
+    )
     message = "\n".join(
         (
             f"Douyin Recorder {tag}",

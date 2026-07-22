@@ -169,9 +169,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ github.sha }}
       - uses: actions/download-artifact@v4
         with:
@@ -197,18 +199,119 @@ jobs:
           done
           (cd release-assets && sha256sum -c windows-asset-SHA256SUMS.txt)
           (cd release-assets && sha256sum -c source-SHA256SUMS.txt)
-      - name: Create immutable release
+
+      - name: Verify immutable annotated tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          tag_object="$(git rev-parse "refs/tags/$RELEASE_TAG")"
+          tag_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{}")"
+          test "$(git cat-file -t "$tag_object")" = "tag"
+          test "$tag_commit" = "$GITHUB_SHA"
+          echo "object_sha=$tag_object" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$tag_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Create or validate immutable release
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          state="created"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "Release already exists: $GITHUB_REF_NAME" >&2
-            exit 1
+            state="validated_existing"
+            release_json="$(gh api \
+              "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")"
+            test "$(jq -r '.draft' <<<"$release_json")" = "false"
+            test "$(jq -r '.prerelease' <<<"$release_json")" = "false"
+            existing="$RUNNER_TEMP/existing-release-assets"
+            mkdir -p "$existing"
+            gh release download "$GITHUB_REF_NAME" --dir "$existing"
+            diff -u \
+              <(find release-assets -maxdepth 1 -type f -printf '%f\n' | sort) \
+              <(find "$existing" -maxdepth 1 -type f -printf '%f\n' | sort)
+            while IFS= read -r -d '' local_asset; do
+              name="$(basename "$local_asset")"
+              cmp "$local_asset" "$existing/$name"
+            done < <(find release-assets -maxdepth 1 -type f -print0)
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              release-assets/* \
+              --verify-tag \
+              --title "Douyin Recorder $GITHUB_REF_NAME" \
+              --notes-file "docs/releases/$GITHUB_REF_NAME.md"
           fi
-          gh release create "$GITHUB_REF_NAME" \
-            release-assets/* \
-            --verify-tag \
-            --title "Douyin Recorder $GITHUB_REF_NAME" \
-            --notes-file docs/releases/v0.1.0.md
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
+      - name: Record immutable Release audit on Issue 18
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_STATE: ${{ steps.release.outputs.state }}
+          TAG_OBJECT: ${{ steps.tag.outputs.object_sha }}
+          TAG_COMMIT: ${{ steps.tag.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/release.json"
+          audit_json="$RUNNER_TEMP/release-audit.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            > "$release_json"
+          jq -e '
+            .draft == false and
+            .prerelease == false and
+            (.assets | length == 9) and
+            all(.assets[]; .size > 0 and (.digest | startswith("sha256:")))
+          ' "$release_json" >/dev/null
+          jq \
+            --arg state "$RELEASE_STATE" \
+            --arg tag_object "$TAG_OBJECT" \
+            --arg tag_commit "$TAG_COMMIT" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            '{
+              release_workflow_run_id: $run_id,
+              release_workflow_run_attempt: $run_attempt,
+              release_state: $state,
+              release_id: .id,
+              release_name: .name,
+              tag_name: .tag_name,
+              target_commitish: .target_commitish,
+              tag_object_sha: $tag_object,
+              tag_commit_sha: $tag_commit,
+              published_at: .published_at,
+              draft: .draft,
+              prerelease: .prerelease,
+              html_url: .html_url,
+              assets: [.assets[] | {
+                id, name, size, digest, content_type, created_at, updated_at
+              }],
+              live_verified: false,
+              protocol_issue: 1
+            }' "$release_json" > "$audit_json"
+
+          marker="<!-- release-workflow-run:$GITHUB_RUN_ID -->"
+          body="$RUNNER_TEMP/release-audit.md"
+          {
+            echo "$marker"
+            echo "## Formal Release audit"
+            echo
+            echo '```json'
+            cat "$audit_json"
+            echo '```'
+          } > "$body"
+
+          comment_id="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/18/comments" \
+            --jq ".[] | select(.body | contains(\"$marker\")) | .id" | head -n 1)"
+          if [[ -n "$comment_id" ]]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -F "body=@$body" >/dev/null
+          else
+            gh issue comment 18 --body-file "$body" >/dev/null
+          fi
