@@ -6,6 +6,7 @@ import json
 import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +53,7 @@ async def _initialize(path: Path) -> int:
 
 
 def _marker_count(path: Path) -> int:
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         row = connection.execute(
             "SELECT COUNT(*) FROM rooms WHERE room_key = ? AND room_url = ?",
             (_MARKER_ROOM_KEY, _MARKER_ROOM_URL),
