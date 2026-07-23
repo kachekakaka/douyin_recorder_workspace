@@ -91,8 +91,10 @@ def _records_manifest(records_dir: Path) -> dict[str, object]:
     return {"file_count": len(rows), "total_bytes": total_bytes, "files": rows}
 
 
-def create_runtime_backup(output_dir: Path) -> dict[str, object]:
-    settings = Settings.load()
+def create_runtime_backup(
+    output_dir: Path, *, settings: Settings | None = None
+) -> dict[str, object]:
+    settings = settings or Settings.load()
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
