@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import tempfile
 import zipfile
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -49,10 +50,11 @@ def _backup_sqlite(source: Path, target: Path) -> dict[str, object]:
     target.parent.mkdir(parents=True, exist_ok=True)
     source_uri = f"file:{source.as_posix()}?mode=ro"
     with (
-        sqlite3.connect(source_uri, uri=True, timeout=10.0) as src,
-        sqlite3.connect(target) as dst,
+        closing(sqlite3.connect(source_uri, uri=True, timeout=10.0)) as src,
+        closing(sqlite3.connect(target)) as dst,
     ):
         src.backup(dst)
+        dst.commit()
         result = dst.execute("PRAGMA integrity_check").fetchone()
         integrity = str(result[0]) if result else "missing"
     if integrity.lower() != "ok":
