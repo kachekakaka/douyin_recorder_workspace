@@ -26,6 +26,19 @@ def test_source_and_portable_operations_entrypoints_match_safety_contract() -> N
             assert "format " not in text.casefold()
 
 
+def test_timestamp_generation_is_safe_in_unicode_package_paths() -> None:
+    for relative in (
+        "diagnostics.bat",
+        "maintenance.bat",
+        "packaging/windows/diagnostics.bat",
+        "packaging/windows/maintenance.bat",
+    ):
+        text = _read(relative)
+        assert 'powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"' in text
+        assert "from datetime import datetime" not in text
+        assert '"%PY%" -c' not in text
+
+
 def test_diagnostics_entrypoints_generate_redacted_json() -> None:
     for relative in ("diagnostics.bat", "packaging/windows/diagnostics.bat"):
         text = _read(relative)
