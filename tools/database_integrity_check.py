@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sqlite3
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -120,7 +121,9 @@ def check_database(path: Path) -> dict[str, Any]:
         return base
 
     try:
-        with sqlite3.connect(_readonly_uri(path), uri=True, timeout=10.0) as connection:
+        with closing(
+            sqlite3.connect(_readonly_uri(path), uri=True, timeout=10.0)
+        ) as connection:
             connection.execute("PRAGMA query_only=ON")
             integrity_rows = connection.execute("PRAGMA integrity_check").fetchall()
             integrity_messages = [str(row[0]) for row in integrity_rows]
