@@ -4,50 +4,100 @@ import argparse
 import json
 import platform
 import sqlite3
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-def _schema_version(db_path: Path) -> int | None:
-    if not db_path.exists():
-        return None
+from app import __version__  # noqa: E402
+from tools.database_integrity_check import check_database  # noqa: E402
+
+
+def _read_contract(root: Path) -> dict[str, object]:
+    path = root / "app" / "douyin" / "contracts" / "provisional_v1.json"
     try:
-        with sqlite3.connect(db_path) as conn:
-            row = conn.execute("PRAGMA user_version").fetchone()
-            return int(row[0]) if row else 0
-    except sqlite3.Error:
-        return None
-
-
-def build_report(root: Path) -> dict[str, Any]:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"present": False, "readable": False}
+    if not isinstance(payload, dict):
+        return {"present": True, "readable": False}
     return {
-        "diagnostic_version": 1,
-        "platform": platform.platform(),
-        "python": platform.python_version(),
-        "repository": root.name,
-        "database": {
-            "schema_version": _schema_version(root / "userdata" / "app.sqlite3"),
+        "present": True,
+        "readable": True,
+        "target_method": payload.get("target_method"),
+        "live_verified": payload.get("live_verified"),
+    }
+
+
+def _file_summary(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {"present": False}
+    if path.is_symlink() or not path.is_file():
+        return {"present": True, "safe_type": False}
+    return {"present": True, "safe_type": True, "bytes": path.stat().st_size}
+
+
+def build_report(root: Path, *, database_path: Path | None = None) -> dict[str, Any]:
+    root = root.resolve()
+    database = (database_path or root / "userdata" / "douyin_recorder.db").resolve()
+    database_report = check_database(database)
+    return {
+        "diagnostic_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "application_version": __version__,
+        "runtime": {
+            "python_version": platform.python_version(),
+            "system": platform.system(),
+            "system_release": platform.release(),
+            "machine": platform.machine(),
         },
-        "safety": {
-            "contains_cookie": False,
-            "contains_full_stream_url": False,
-            "contains_raw_payload": False,
+        "repository": {"name": root.name},
+        "configuration": {
+            "config_json": _file_summary(root / "config" / "config.json"),
+            "runtime_env": _file_summary(root / "config" / "runtime.env"),
+        },
+        "database": database_report,
+        "protocol_contract": _read_contract(root),
+        "redaction_policy": {
+            "sensitive_values": "excluded",
+            "full_urls": "excluded",
+            "raw_protocol_data": "excluded",
+            "absolute_runtime_paths": "excluded",
         },
     }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate safe diagnostics JSON")
-    parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--output", type=Path)
-    args = parser.parse_args()
+def _write_json(path: Path, rendered: str) -> None:
+    if path.exists() and path.is_symlink():
+        raise OSError("refusing to replace a symbolic-link output")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rendered, encoding="utf-8")
 
-    report = build_report(args.root.resolve())
-    text = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
-    if args.output:
-        args.output.write_text(text, encoding="utf-8")
-    else:
-        print(text, end="")
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Generate a redacted diagnostics report.")
+    parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--database", type=Path)
+    parser.add_argument("--output", type=Path)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        report = build_report(args.root, database_path=args.database)
+        rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        if args.output is None:
+            print(rendered, end="")
+        else:
+            _write_json(args.output, rendered)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"[失败] 诊断报告生成失败: {type(exc).__name__}", file=sys.stderr)
+        return 1
     return 0
 
 
