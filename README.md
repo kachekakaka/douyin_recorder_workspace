@@ -236,6 +236,25 @@ POST /api/jobs/{job_id}/actions/cancel
 
 recipient API 是只读审计接口。recording、manager 与 jobs API 只返回脱敏输入 host/hash、Session、分片、worker、任务和 recipient hash 审计状态；不会返回 raw payload、异常正文、recipient 明文、完整 WSS、Cookie、完整签名流 URL或真实原始 payload。
 
+## v0.1.1 稳定性运维
+
+v0.1.1 稳定性阶段不改变当前 `0.1.0` 版本号，也不创建新 tag。源码环境和 Windows 便携包均提供统一安全运维入口：
+
+```bat
+operations.bat diagnostics
+operations.bat backup
+operations.bat maintenance-plan
+operations.bat maintenance-apply I_HAVE_STOPPED_THE_APP
+```
+
+- `diagnostics` 生成脱敏 JSON，只包含版本、运行环境、配置存在性和 SQLite 校验摘要；
+- `backup` 使用 SQLite backup API 创建运行数据备份和 SHA-256；
+- `maintenance-plan` 只读检查 integrity、foreign keys、migration checksum 和 WAL/freelist；
+- `maintenance-apply` 必须先完全停止应用并输入确认词，执行前强制创建已校验备份；
+- 写维护只执行 WAL checkpoint 和 `PRAGMA optimize`，不自动 VACUUM，不删除业务记录或媒体。
+
+详细说明见 `docs/operations/DATABASE_MAINTENANCE.md` 和 `docs/V0.1.1_IMPLEMENTATION_REPORT.md`。真实 recipient 协议仍保持 `live_verified=false`。
+
 ## 验证
 
 Windows：
@@ -261,6 +280,9 @@ python tools/export_recipient_evidence_fixture.py --help
 python tools/ffmpeg_supervisor_smoke.py --duration 2
 python tools/recording_session_smoke.py --duration 2
 python tools/postprocess_smoke.py --duration 2
+python tools/backup_restore_smoke.py --output-dir userdata/backup-restore-smoke
+python tools/database_maintenance_smoke.py --output-dir userdata/database-maintenance-smoke
+python tools/startup_recovery_smoke.py --cycles 25
 ```
 
 数据库 replay 只接受显式 synthetic fixture；公开报告不包含 raw payload。它验证 schema v6 投影与 reducer 的 Waiting/Active/Unknown 结果一致，但不能替代真实现场协议证据。
@@ -310,6 +332,11 @@ docs/P4A_RELEASE_REPORT.md
 docs/RELEASE_PROMOTION.md
 docs/FINAL_IMPLEMENTATION_REPORT.md
 docs/FINAL_IMPLEMENTATION_REPORT.json
+docs/V0.1.1_IMPLEMENTATION_REPORT.md
+docs/operations/DIAGNOSTICS_AND_RECOVERY.md
+docs/operations/DATABASE_MAINTENANCE.md
+docs/releases/V0.1.1_STABILITY_PLAN.md
+docs/releases/v0.1.1.md
 docs/GITHUB_WORKFLOW.md
 ```
 
