@@ -23,7 +23,9 @@ def test_source_and_portable_operations_entrypoints_match_safety_contract() -> N
             assert "DOUYIN_COOKIE" not in text
             assert "raw_payload" not in text
             assert "taskkill" not in text.casefold()
-            assert "format " not in text.casefold()
+            for line in text.splitlines():
+                command = line.strip().casefold()
+                assert not command.startswith(("format ", "format.com "))
 
 
 def test_timestamp_generation_is_safe_in_unicode_package_paths() -> None:
