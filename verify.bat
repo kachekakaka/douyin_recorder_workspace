@@ -4,7 +4,7 @@ setlocal EnableExtensions
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
-title douyin_recorder_workspace v0.1.0 - 完整自检
+title douyin_recorder_workspace - 稳定性完整自检
 
 call scripts\windows\prepare-python.bat dev
 if errorlevel 1 goto :failed
@@ -31,6 +31,12 @@ if errorlevel 1 goto :failed
 "%PY%" tools\replay_recipient_fixture_to_db.py --output "%VERIFY_DIR%\recipient-database-replay.json"
 if errorlevel 1 goto :failed
 "%PY%" -c "import json,pathlib,sys; r=json.loads(pathlib.Path(r'%VERIFY_DIR%\recipient-database-replay.json').read_text(encoding='utf-8')); ok=r.get('schema_version')==6 and r.get('contract_live_verified') is False and r.get('summary')=={'target_messages':7,'unique_event_count':6,'duplicate_frame_count':1,'late_event_count':1,'interval_count':7}; s=json.dumps(r,sort_keys=True); ok=ok and all(x not in s for x in ('raw_payload_json','extra_json','unknown_fields_json','frame_base64')); sys.exit(0 if ok else 1)"
+if errorlevel 1 goto :failed
+"%PY%" tools\backup_restore_smoke.py --output-dir "%VERIFY_DIR%\backup-restore" --json-output "%VERIFY_DIR%\backup-restore.json"
+if errorlevel 1 goto :failed
+"%PY%" tools\diagnostics_report.py --root "%CD%" --output "%VERIFY_DIR%\diagnostics-report.json"
+if errorlevel 1 goto :failed
+"%PY%" -c "import json,pathlib,sys; s=json.loads(pathlib.Path(r'%VERIFY_DIR%\backup-restore.json').read_text(encoding='utf-8')); d=json.loads(pathlib.Path(r'%VERIFY_DIR%\diagnostics-report.json').read_text(encoding='utf-8')); ok=s.get('passed') is True and s.get('database',{}).get('restored_schema_version')==6 and d.get('protocol_contract',{}).get('live_verified') is False; sys.exit(0 if ok else 1)"
 if errorlevel 1 goto :failed
 
 where node >nul 2>nul
@@ -74,12 +80,12 @@ if errorlevel 1 (
 
 if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== v0.1.0 完整自检通过 =====
+echo ===== 稳定性完整自检通过 =====
 exit /b 0
 
 :failed
 if defined VERIFY_DIR if exist "%VERIFY_DIR%" rmdir /s /q "%VERIFY_DIR%"
 echo.
-echo ===== v0.1.0 自检失败，请查看上方信息 =====
+echo ===== 稳定性自检失败，请查看上方信息 =====
 pause
 exit /b 1
