@@ -241,7 +241,11 @@ def main() -> int:
                 )
             if args.backup_dir is None:
                 raise DatabaseMaintenanceError("--backup-dir is required in apply mode")
-            backup_creator = lambda output: create_runtime_backup(output, settings=settings)
+
+            def configured_backup(output: Path) -> dict[str, object]:
+                return create_runtime_backup(output, settings=settings)
+
+            backup_creator = configured_backup
         report = run_database_maintenance(
             database,
             apply=args.apply,
