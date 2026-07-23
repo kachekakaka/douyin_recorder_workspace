@@ -38,6 +38,12 @@ if errorlevel 1 goto :failed
 if errorlevel 1 goto :failed
 "%PY%" -c "import json,pathlib,sys; s=json.loads(pathlib.Path(r'%VERIFY_DIR%\backup-restore.json').read_text(encoding='utf-8')); d=json.loads(pathlib.Path(r'%VERIFY_DIR%\diagnostics-report.json').read_text(encoding='utf-8')); ok=s.get('passed') is True and s.get('database',{}).get('restored_schema_version')==6 and d.get('protocol_contract',{}).get('live_verified') is False; sys.exit(0 if ok else 1)"
 if errorlevel 1 goto :failed
+"%PY%" tools\database_maintenance_smoke.py --output-dir "%VERIFY_DIR%\database-maintenance" --json-output "%VERIFY_DIR%\database-maintenance.json"
+if errorlevel 1 goto :failed
+"%PY%" tools\startup_recovery_smoke.py --cycles 10 --json-output "%VERIFY_DIR%\startup-recovery.json"
+if errorlevel 1 goto :failed
+"%PY%" -c "import json,pathlib,sys; m=json.loads(pathlib.Path(r'%VERIFY_DIR%\database-maintenance.json').read_text(encoding='utf-8')); r=json.loads(pathlib.Path(r'%VERIFY_DIR%\startup-recovery.json').read_text(encoding='utf-8')); ok=m.get('passed') is True and m.get('schema_version')==6 and m.get('vacuum_execution_supported') is False and r.get('passed') is True and r.get('cycles')==10 and r.get('live_verified') is False; sys.exit(0 if ok else 1)"
+if errorlevel 1 goto :failed
 
 where node >nul 2>nul
 if errorlevel 1 (

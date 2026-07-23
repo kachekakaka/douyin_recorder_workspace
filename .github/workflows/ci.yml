@@ -160,6 +160,43 @@ jobs:
                   raise SystemExit(f"stability report leaked {forbidden}")
           PY
 
+      - name: v0.1.1 database maintenance and startup recovery smoke
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/database_maintenance_smoke.py \
+            --output-dir "$RUNNER_TEMP/database-maintenance-smoke" \
+            --json-output "$RUNNER_TEMP/database-maintenance-smoke.json" \
+            2>&1 | tee "$RUNNER_TEMP/database-maintenance-smoke.log"
+          python tools/startup_recovery_smoke.py \
+            --cycles 25 \
+            --json-output "$RUNNER_TEMP/startup-recovery-smoke.json" \
+            2>&1 | tee "$RUNNER_TEMP/startup-recovery-smoke.log"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          maintenance = json.loads(
+              (temp / "database-maintenance-smoke.json").read_text(encoding="utf-8")
+          )
+          recovery = json.loads(
+              (temp / "startup-recovery-smoke.json").read_text(encoding="utf-8")
+          )
+          if maintenance.get("passed") is not True:
+              raise SystemExit("database maintenance smoke did not pass")
+          if maintenance.get("schema_version") != 6:
+              raise SystemExit("database maintenance schema mismatch")
+          if maintenance.get("vacuum_execution_supported") is not False:
+              raise SystemExit("database maintenance unexpectedly enabled VACUUM")
+          if recovery.get("passed") is not True or recovery.get("cycles") != 25:
+              raise SystemExit("startup recovery smoke did not pass")
+          if recovery.get("live_verified") is not False:
+              raise SystemExit("startup recovery smoke changed live_verified")
+          PY
+
       - name: Ensure FFmpeg for media smoke tests
         if: matrix.python-version == '3.12'
         run: |
@@ -230,6 +267,10 @@ jobs:
             ${{ runner.temp }}/backup-restore-smoke.log
             ${{ runner.temp }}/backup-restore-smoke.json
             ${{ runner.temp }}/diagnostics-report.json
+            ${{ runner.temp }}/database-maintenance-smoke.log
+            ${{ runner.temp }}/database-maintenance-smoke.json
+            ${{ runner.temp }}/startup-recovery-smoke.log
+            ${{ runner.temp }}/startup-recovery-smoke.json
             ${{ runner.temp }}/recovery.log
           if-no-files-found: ignore
           retention-days: 7
