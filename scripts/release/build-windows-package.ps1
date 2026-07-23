@@ -61,6 +61,9 @@ foreach ($file in @("README.md", "THIRD_PARTY_NOTICES.md")) {
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "tools"), (Join-Path $stage "scripts\release"), (Join-Path $stage "packaging") | Out-Null
 foreach ($tool in @(
     "backup_runtime.py",
+    "database_integrity_check.py",
+    "database_maintenance.py",
+    "diagnostics_report.py",
     "ffmpeg_supervisor_smoke.py",
     "postprocess_smoke.py",
     "recording_session_smoke.py",
@@ -71,9 +74,9 @@ foreach ($tool in @(
 }
 Copy-Item -LiteralPath (Join-Path $SourceRoot "scripts\release\health-smoke.ps1") -Destination (Join-Path $stage "scripts\release\health-smoke.ps1")
 Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\release-lock.json") -Destination (Join-Path $stage "packaging\release-lock.json")
-Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\windows\start.bat") -Destination (Join-Path $stage "start.bat")
-Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\windows\verify.bat") -Destination (Join-Path $stage "verify.bat")
-Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\windows\backup.bat") -Destination (Join-Path $stage "backup.bat")
+foreach ($entrypoint in @("start.bat", "verify.bat", "backup.bat", "diagnostics.bat", "maintenance.bat", "operations.bat")) {
+    Copy-Item -LiteralPath (Join-Path $SourceRoot "packaging\windows\$entrypoint") -Destination (Join-Path $stage $entrypoint)
+}
 
 $pythonZip = Join-Path $downloads "python-embed.zip"
 Get-VerifiedFile -Url ([string]$lock.python.url) -Destination $pythonZip -Sha256 ([string]$lock.python.sha256)

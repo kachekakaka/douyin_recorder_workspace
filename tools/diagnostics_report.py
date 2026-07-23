@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import sqlite3
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -41,9 +43,31 @@ def _file_summary(path: Path) -> dict[str, object]:
     return {"present": True, "safe_type": True, "bytes": path.stat().st_size}
 
 
-def build_report(root: Path, *, database_path: Path | None = None) -> dict[str, Any]:
+def _runtime_path(root: Path, value: str | os.PathLike[str]) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = root / path
+    return Path(os.path.abspath(path))
+
+
+def build_report(
+    root: Path,
+    *,
+    database_path: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     root = root.resolve()
-    database = (database_path or root / "userdata" / "douyin_recorder.db").resolve()
+    env = os.environ if environ is None else environ
+    config_dir = _runtime_path(
+        root, env.get("DOUYIN_RECORDER_CONFIG_DIR", root / "config")
+    )
+    userdata_dir = _runtime_path(
+        root, env.get("DOUYIN_RECORDER_USERDATA_DIR", root / "userdata")
+    )
+    configured_database = env.get(
+        "DOUYIN_RECORDER_DATABASE_PATH", userdata_dir / "douyin_recorder.db"
+    )
+    database = _runtime_path(root, database_path or configured_database)
     database_report = check_database(database)
     return {
         "diagnostic_version": 2,
@@ -57,8 +81,8 @@ def build_report(root: Path, *, database_path: Path | None = None) -> dict[str, 
         },
         "repository": {"name": root.name},
         "configuration": {
-            "config_json": _file_summary(root / "config" / "config.json"),
-            "runtime_env": _file_summary(root / "config" / "runtime.env"),
+            "config_json": _file_summary(config_dir / "config.json"),
+            "runtime_env": _file_summary(config_dir / "runtime.env"),
         },
         "database": database_report,
         "protocol_contract": _read_contract(root),

@@ -18,7 +18,7 @@ def test_diagnostics_report_does_not_expose_private_values(tmp_path: Path) -> No
         f"PRIVATE_SETTING={private_value}\n", encoding="utf-8"
     )
 
-    report = build_report(tmp_path)
+    report = build_report(tmp_path, environ={})
     rendered = json.dumps(report, sort_keys=True)
 
     assert private_value not in rendered
@@ -40,7 +40,39 @@ def test_diagnostics_report_uses_runtime_database_filename(tmp_path: Path) -> No
         )
         connection.commit()
 
-    report = build_report(tmp_path)
+    report = build_report(tmp_path, environ={})
 
     assert report["database"]["database_filename"] == "douyin_recorder.db"
     assert "app.sqlite3" not in json.dumps(report)
+
+
+def test_diagnostics_report_honors_configured_runtime_paths(tmp_path: Path) -> None:
+    config = tmp_path / "private-config"
+    userdata = tmp_path / "private-userdata"
+    database = userdata / "health.db"
+    config.mkdir()
+    userdata.mkdir()
+    (config / "config.json").write_text("{}\n", encoding="utf-8")
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE schema_migrations ("
+            "version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, "
+            "applied_at_ms INTEGER NOT NULL)"
+        )
+        connection.commit()
+
+    report = build_report(
+        tmp_path,
+        environ={
+            "DOUYIN_RECORDER_CONFIG_DIR": str(config),
+            "DOUYIN_RECORDER_USERDATA_DIR": str(userdata),
+            "DOUYIN_RECORDER_DATABASE_PATH": str(database),
+        },
+    )
+    rendered = json.dumps(report, sort_keys=True)
+
+    assert report["configuration"]["config_json"]["present"] is True
+    assert report["database"]["database_filename"] == "health.db"
+    assert str(config) not in rendered
+    assert str(userdata) not in rendered
+    assert str(database) not in rendered
