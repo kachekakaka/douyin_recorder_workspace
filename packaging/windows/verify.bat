@@ -19,11 +19,17 @@ mkdir "%VERIFY_DIR%" >nul 2>nul
 if not exist "%PY%" goto :failed
 if not exist "%DOUYIN_RECORDER_FFMPEG%" goto :failed
 if not exist "%DOUYIN_RECORDER_FFPROBE%" goto :failed
+for %%F in (operations.bat diagnostics.bat maintenance.bat backup.bat) do if not exist "%%F" goto :failed
+for %%F in (tools\diagnostics_report.py tools\database_integrity_check.py tools\database_maintenance.py) do if not exist "%%F" goto :failed
 "%PY%" tools\release_package.py verify --package-root "%CD%"
 if errorlevel 1 goto :failed
 "%PY%" -c "import app,fastapi,httpx,uvicorn,websockets,google.protobuf; assert app.__version__=='0.1.0'"
 if errorlevel 1 goto :failed
 "%PY%" -m app.bootstrap --json
+if errorlevel 1 goto :failed
+call operations.bat diagnostics
+if errorlevel 1 goto :failed
+call operations.bat maintenance-plan
 if errorlevel 1 goto :failed
 "%PY%" tools\ffmpeg_supervisor_smoke.py --duration 1 --output-dir "%VERIFY_DIR%\ffmpeg-smoke"
 if errorlevel 1 goto :failed
