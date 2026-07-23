@@ -120,6 +120,46 @@ jobs:
                   raise SystemExit(f"recipient database replay leaked {forbidden}")
           PY
 
+      - name: v0.1.1 backup restore and diagnostics smoke
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/backup_restore_smoke.py \
+            --output-dir "$RUNNER_TEMP/backup-restore-smoke" \
+            --json-output "$RUNNER_TEMP/backup-restore-smoke.json" \
+            2>&1 | tee "$RUNNER_TEMP/backup-restore-smoke.log"
+          python tools/diagnostics_report.py \
+            --root . \
+            --output "$RUNNER_TEMP/diagnostics-report.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          smoke = json.loads(
+              (temp / "backup-restore-smoke.json").read_text(encoding="utf-8")
+          )
+          diagnostics = json.loads(
+              (temp / "diagnostics-report.json").read_text(encoding="utf-8")
+          )
+          if smoke.get("passed") is not True:
+              raise SystemExit("backup restore smoke did not pass")
+          if smoke.get("database", {}).get("restored_schema_version") != 6:
+              raise SystemExit("backup restore schema mismatch")
+          if diagnostics.get("protocol_contract", {}).get("live_verified") is not False:
+              raise SystemExit("diagnostics changed live_verified")
+          rendered = json.dumps({"smoke": smoke, "diagnostics": diagnostics}, sort_keys=True)
+          for forbidden in (
+              "private-value-must-not-appear",
+              "raw_payload_json",
+              "frame_base64",
+          ):
+              if forbidden in rendered:
+                  raise SystemExit(f"stability report leaked {forbidden}")
+          PY
+
       - name: Ensure FFmpeg for media smoke tests
         if: matrix.python-version == '3.12'
         run: |
@@ -187,6 +227,9 @@ jobs:
             ${{ runner.temp }}/ffmpeg-smoke/ffmpeg.log
             ${{ runner.temp }}/recording-session-smoke.log
             ${{ runner.temp }}/postprocess-smoke.log
+            ${{ runner.temp }}/backup-restore-smoke.log
+            ${{ runner.temp }}/backup-restore-smoke.json
+            ${{ runner.temp }}/diagnostics-report.json
             ${{ runner.temp }}/recovery.log
           if-no-files-found: ignore
           retention-days: 7
