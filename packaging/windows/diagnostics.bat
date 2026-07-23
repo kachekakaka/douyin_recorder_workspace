@@ -11,7 +11,7 @@ if not exist "%PY%" goto :failed
 set "REPORT_ROOT=%CD%\userdata\diagnostics"
 if defined DOUYIN_RECORDER_USERDATA_DIR set "REPORT_ROOT=%DOUYIN_RECORDER_USERDATA_DIR%\diagnostics"
 mkdir "%REPORT_ROOT%" >nul 2>nul
-for /f "usebackq delims=" %%T in (`"%PY%" -c "from datetime import datetime; print(datetime.now().strftime('%%Y%%m%%d-%%H%%M%%S'))"`) do set "STAMP=%%T"
+for /f "usebackq delims=" %%T in (`powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"`) do set "STAMP=%%T"
 if not defined STAMP goto :failed
 set "REPORT=%REPORT_ROOT%\diagnostics-%STAMP%.json"
 
