@@ -86,5 +86,14 @@ def test_portable_build_and_verify_include_operations_toolchain() -> None:
         "diagnostics_report.py",
     ):
         assert name in build
-    assert "call operations.bat diagnostics" in verify
-    assert "call operations.bat maintenance-plan" in verify
+    health = "scripts\\release\\health-smoke.ps1"
+    diagnostics = "call operations.bat diagnostics"
+    maintenance = "call operations.bat maintenance-plan"
+    assert health in verify
+    assert diagnostics in verify
+    assert maintenance in verify
+    assert verify.index(health) < verify.index(diagnostics) < verify.index(maintenance)
+    assert (
+        'set "DOUYIN_RECORDER_DATABASE_PATH=%VERIFY_DIR%\\health\\userdata\\health.db"'
+        in verify
+    )
